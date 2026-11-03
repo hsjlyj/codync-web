@@ -276,13 +276,13 @@ export const REJECT_CLOSE_CODES: Record<RejectCode, number> = {
 export interface ChannelHello {
   t: 'hello'
   v: 1
-  /** Device public key (Ed25519), base64, 32 bytes. */
+  /** Device public key (Ed25519), base64url (no padding), 32 bytes. */
   dk: string
-  /** Ephemeral X25519 public key, base64, 32 bytes. */
+  /** Ephemeral X25519 public key, base64url (no padding), 32 bytes. */
   ek: string
-  /** Random nonce, base64, 32 bytes. */
+  /** Random nonce, base64url (no padding), 32 bytes. */
   n: string
-  /** Ed25519 signature over `hs1_input(cid, dk, ek, n)`, base64, 64 bytes. */
+  /** Ed25519 signature over `hs1_input(cid, dk, ek, n)`, base64url (no padding), 64 bytes. */
   sig: string
   /** True on a pairing channel: the first call inside must be `pair`. */
   pair?: boolean
@@ -293,9 +293,9 @@ export interface ChannelHello {
 export interface ChannelWelcome {
   t: 'welcome'
   v: 1
-  /** Host ephemeral X25519 public key, base64. */
+  /** Host ephemeral X25519 public key, base64url (no padding). */
   ek: string
-  /** Host signature over the transcript hash. */
+  /** Host signature over the transcript hash, base64url (no padding). */
   sig: string
 }
 
@@ -329,6 +329,18 @@ export interface ChannelSubscribe {
   id: number
   sub: string
   b?: unknown
+}
+
+/** One encrypted frame on the wire (crypto.rs `Sealer::seal`): `d` seals
+ *  `[flag][chunk]` with ChaCha20-Poly1305 — flag 0x00 final / 0x01 more,
+ *  nonce = 4 zero bytes + counter BE, AAD = "codync/frame/v1" + counter BE,
+ *  chunk ≤256 KiB, rekey at 2³² frames. A message of n chunks is n frames. */
+export interface ChannelFrame {
+  t: 'f'
+  /** Frame counter, starts at 0 per direction. */
+  c: number
+  /** Sealed chunk, base64url (no padding). */
+  d: string
 }
 
 export type ChannelMessage = ChannelRequest | ChannelReply | ChannelError | ChannelSubscribe
