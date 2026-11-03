@@ -226,7 +226,7 @@ Composio：`composioCall` 🔒 · `composioStatus` · `setComposioKey` · `compo
 | 签名输入 | `hs1_input(cid, dk, ek_d, n)`；主机回签 transcript hash（客户端应验证主机签名防中间人） |
 | 密钥派生 | X25519 ECDH → HKDF-SHA256（salt=transcript hash）→ 方向密钥 `d2h`/`h2d`（crypto.rs:120-127） |
 | 帧加密 | ChaCha20-Poly1305，nonce = 计数器（12B，后 8B 大端），AAD = `"codync/frame/v1" + 计数器`（crypto.rs:129-146）；单帧明文 ≤256KiB，WebSocket 消息上限 1MiB |
-| 请求封套 | `{"id": N, "m": "<method>", "b": {...}}` → `{"id": N, "r": ...}` 或 `{"id": N, "err": {status, message}}`；订阅 `{"id": N, "sub": "<kind>"}` |
+| 请求封套 | `{"id": N, "m": "<method>", "b": {...}}` → `{"id": N, "ok": ...}` 或 `{"id": N, "err": {status, message}}`；订阅 `{"id": N, "sub": "<kind>"}` |
 | 拒绝码 | 4001 未授权/租约过期/签名错 · 4003 已撤销 · 4008 限流 · 4400 版本不支持 · 4410 配对未开放（devices.rs:117-152）——RemoteClient 重连 UX 按此区分 |
 | 配对码 | 10 分钟有效 · 最多 5 个并存 · 限流 3 次/分/来源、10 次/分/主机（devices.rs:174-177）——认证流程的错误提示按此设计 |
 | **回归锚点** | 仓库内 `docs/reference/fixtures/remote-relay-vectors.json`：`handshake`（dk/ek/n/签名输入/transcript hash/派生密钥）· `frames`（3 条 seal/open，含计数器与 final 标志）· `sas`/`pairCheck`/`claim`/`push`/`mailbox` 等 12 组官方向量——Web 端握手与帧编解码的单测必须以它为基线（主机 `crypto.rs` 测试同源） |

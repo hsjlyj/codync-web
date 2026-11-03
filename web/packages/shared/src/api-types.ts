@@ -316,7 +316,8 @@ export interface ChannelRequest {
 
 export interface ChannelReply {
   id: number
-  r: unknown
+  /** The method's answer (`ok` — channel.rs:492; an old `r` reading was wrong). */
+  ok: unknown
 }
 
 export interface ChannelError {
