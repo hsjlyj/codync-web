@@ -25,6 +25,9 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@codync/shared": [
+        "./packages/shared/src/index.ts"
       ]
     }
   },
