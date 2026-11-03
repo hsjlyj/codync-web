@@ -63,7 +63,7 @@
 | `src/client/transport/` | `host-transport.ts`（`HostTransport` 抽象 + `HostError` + close-code 决策类型）、`channel-crypto.ts`（hs1Input、transcriptHash、HKDF 方向密钥、ChaCha20-Poly1305 seal/open、Sealer/Opener，字节布局对齐 `crypto.rs`）、`channel-transport.ts`（`/channel` 直连：hello→welcome 验签→加密帧 RPC + 订阅事件）、`mock-transport.ts`（演示/测试假主机）；向量副本 `channel-crypto.vectors.json` | 希音，`29743ed` |
 | `src/client/store/` | `app-model.ts`：单主机远程模式，rev 游标、按 id upsert、resync 从 0 重追（砚台 sync 契约） | 希音，`29743ed` |
 | `src/client/use-app-model.ts`、`components/`、`views/` | React 接入（useSyncExternalStore）与视图（connect / roster / thread） | 希音，`29743ed` |
-| `packages/shared/` | `@codync/shared` 0.1.0：`models.ts`（实体类型+纯函数）、`api-types.ts`（API 契约 + `/channel` 线类型），零运行时依赖 | 砚台；已知修正项：`ChannelReply` 的 `r` 字段应为主机实际的 `ok`（channel.rs:494），待砚台改 |
+| `packages/shared/` | `@codync/shared` 0.1.0：`models.ts`（实体类型+纯函数）、`api-types.ts`（API 契约 + `/channel` 线类型），零运行时依赖 | 砚台，typecheck 通过 |
 | `docs/` | 本目录 | 榫卯 |
 | `test/` + `vitest.config.ts` | 测试配置 | 试金 |
 | `content/` | 上游用户手册（Mdx） | 上游既有 |
