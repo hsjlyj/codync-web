@@ -1,0 +1,120 @@
+name: codync-host
+
+on:
+  push:
+    tags: ["v*"]  # one version tag ships the host and the desktop app (release-desktop.yml)
+  pull_request:
+    paths: ["host/**", "packaging/updates/**", "docs/reference/fixtures/remote-relay-vectors.json", ".github/workflows/host.yml"]
+
+# A newer push to the same PR supersedes the run in progress; tag runs always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Tags ship a commit its PR already tested.
+  test:
+    if: github.event_name == 'pull_request'
+    strategy:
+      matrix:
+        # Windows hosts ship inside the desktop app (release-desktop.yml), so no release archive below.
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: host
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      # Each test in its own process (`host/.config/nextest.toml`): fixture hosts share no
+      # process-global locks, so Windows runs them side by side too, and a test that only passes
+      # on a retry shows as FLAKY instead of failing the run. The host has no doctests.
+      - run: cargo nextest run --workspace --profile ci
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      matrix:
+        include:
+          # musl: one static binary that runs on any distro, whatever its glibc.
+          # codync-screen (Remote screen on Linux) links the system GStreamer 1.22+, so it is built
+          # for glibc on Ubuntu 24.04 and ships next to the host in the same archive.
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-musl, name: linux-x86_64 }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, name: linux-arm64 }
+          - { os: macos-latest, target: aarch64-apple-darwin, name: macos-arm64 }
+          - { os: macos-latest, target: x86_64-apple-darwin, name: macos-x86_64 }
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      # rustup reads the pin from the folder it runs in (host/rust-toolchain.toml).
+      - name: Install Rust (host/rust-toolchain.toml)
+        working-directory: host
+        run: |
+          rustup toolchain install
+          rustup target add ${{ matrix.target }}
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev
+      - name: Build
+        working-directory: host
+        # Vendored C (dbus) would call libgcc's outline atomics, which a static musl link lacks.
+        env:
+          CFLAGS_aarch64_unknown_linux_musl: -mno-outline-atomics
+          CODYNC_ENV: main  # released hosts use the main cloud; local builds use dev
+        run: |
+          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
+          test "v$VERSION" = "$GITHUB_REF_NAME" || { echo 'Host version must match release tag'; exit 1; }
+          cargo build --release --target ${{ matrix.target }}
+      - name: Build codync-screen
+        if: runner.os == 'Linux'
+        working-directory: apps/screen-linux
+        run: |
+          rustup toolchain install
+          cargo build --release
+      - name: Package
+        run: |
+          NAME=codync-host-${{ matrix.name }}
+          mkdir $NAME
+          cp host/target/${{ matrix.target }}/release/codync-host $NAME/
+          if [ "$RUNNER_OS" = Linux ]; then
+            cp apps/screen-linux/target/release/codync-screen $NAME/
+            # The computer-use driver the host starts from beside itself (pinned, checked).
+            node packaging/cua-driver/fetch.mjs ${{ matrix.name }} $NAME/
+          fi
+          cp LICENSE $NAME/
+          tar czf $NAME.tar.gz $NAME
+          shasum -a 256 $NAME.tar.gz > $NAME.tar.gz.sha256
+      - name: Sign host update manifest
+        env:
+          HOST_UPDATE_SIGNING_KEY: ${{ secrets.HOST_UPDATE_SIGNING_KEY }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/update-signing"
+          "$RUNNER_TEMP/update-signing/bin/pip" install 'cryptography>=44,<47'
+          "$RUNNER_TEMP/update-signing/bin/python" packaging/updates/sign-host-release.py \
+            "codync-host-${{ matrix.name }}.tar.gz" \
+            --version "$GITHUB_REF_NAME" --platform "${{ matrix.name }}"
+      - uses: softprops/action-gh-release@v2
+        with:
+          make_latest: false
+          files: |
+            codync-host-*.tar.gz
+            codync-host-*.tar.gz.sha256
+      # The update manifest last: the release gate takes a release with all its feeds as fully uploaded.
+      - uses: softprops/action-gh-release@v2
+        with:
+          make_latest: false
+          files: |
+            codync-host-*.update.json
+            codync-host-*.update.json.sig

@@ -1,0 +1,648 @@
+//! `codync-host`: runs coding-agent bots over ACP and serves the Codync apps.
+
+mod agent;
+mod analytics;
+mod analytics_cli;
+mod api;
+mod background;
+mod chat;
+mod cloud_cli;
+mod compat;
+mod environment;
+mod hub;
+mod icons;
+mod import;
+mod import_cli;
+mod local_api;
+mod market;
+mod mcp;
+mod network;
+mod network_cli;
+mod pair_cli;
+mod prompt;
+mod remote;
+mod routines;
+mod screen;
+mod send_cli;
+mod service;
+mod shell;
+mod store;
+mod tui;
+mod update;
+mod usage;
+mod voice;
+
+use agent::backends;
+use local_api::local_call;
+use remote::identity;
+
+use anyhow::{Context, Result};
+use clap::{Parser, Subcommand};
+use serde_json::json;
+use std::fmt::Write as _;
+use std::future::IntoFuture;
+use std::io::Read;
+use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
+
+/// Poison-tolerant locking. Every critical section in the host is a short,
+/// self-contained update, so a panic elsewhere never leaves the data half
+/// written — and a daemon must not wedge every later caller over one panic.
+pub trait LockExt<T> {
+    fn locked(&self) -> MutexGuard<'_, T>;
+}
+
+impl<T> LockExt<T> for Mutex<T> {
+    fn locked(&self) -> MutexGuard<'_, T> {
+        self.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// One shared HTTP client (connection pool + TLS config) for the whole process.
+pub fn http() -> &'static reqwest::Client {
+    static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+        // Only fails without system CA certificates (bare containers).
+        reqwest::Client::builder().build().expect("TLS setup failed: install the ca-certificates package")
+    });
+    &CLIENT
+}
+
+#[derive(Parser)]
+#[command(
+    name = "codync-host",
+    version,
+    about = "Codync host: runs your coding-agent bots and serves the Codync phone app"
+)]
+struct Cli {
+    #[command(subcommand)]
+    cmd: Option<Sub>,
+}
+
+#[derive(Subcommand)]
+enum Sub {
+    /// Run the host in the foreground (what the background service runs).
+    Serve {
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+        /// Address to bind. Defaults to all interfaces so the phone can reach it over Tailscale/LAN.
+        #[arg(long, default_value = "0.0.0.0")]
+        bind: String,
+    },
+    /// Show a one-time pairing QR code for the Codync iOS app (the host must be running).
+    Pair {
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+        /// Print machine-readable JSON instead of a QR code.
+        #[arg(long)]
+        json: bool,
+    },
+    /// This computer's identity and local API details (for SSH setups).
+    Info {
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List or revoke the devices allowed to use this computer.
+    Devices {
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+        #[command(subcommand)]
+        action: Option<DevicesAction>,
+    },
+    /// List, approve or deny devices asking to use this computer: account devices, and phones pairing with a
+    /// computer in no account.
+    Access {
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+        #[command(subcommand)]
+        action: Option<pair_cli::AccessAction>,
+    },
+    /// Show or change the Codync cloud (reach this computer from anywhere).
+    Cloud(cloud_cli::CloudArgs),
+    /// Turn this computer's usage analytics on or off, as Settings does (the Windows installer asks with it).
+    Analytics(analytics_cli::AnalyticsArgs),
+    /// Your other computers: create a network, invite them, see who is around.
+    Network(network_cli::NetworkArgs),
+    /// Import bots from another app's export file (`--skill` prints the skill that writes one in Grok Bot).
+    Import(import_cli::ImportArgs),
+    /// Install and start the host as a background service (launchd / systemd --user).
+    Install {
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// Stop and remove the background service.
+    Uninstall,
+    /// Stop the background service, keeping its configuration and all data.
+    Stop,
+    /// Update a standalone host, or inspect/configure its automatic updates.
+    Update {
+        #[arg(long, conflicts_with_all = ["status", "worker"])]
+        check: bool,
+        /// Read update progress without checking or installing a release.
+        #[arg(long, conflicts_with = "worker")]
+        status: bool,
+        #[arg(long, value_parser = ["on", "off"], conflicts_with_all = ["check", "status", "worker"])]
+        auto: Option<String>,
+        /// Allow a manual update to interrupt active bots (their sessions resume).
+        #[arg(long)]
+        force: bool,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+        #[arg(long)]
+        json: bool,
+        #[arg(long, hide = true)]
+        worker: bool,
+    },
+    /// The versions and environment of this host (JSON). The desktop app reads `environment`
+    /// from it before installing the host; hosts before 2.19.3 also read `minApp` from a
+    /// downloaded update.
+    #[command(hide = true)]
+    Compat,
+    /// Show whether the host is installed and running.
+    Status {
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// Claude Code statusLine command: forwards usage limits to the host, then prints
+    /// the wrapped command's status line (`statusline -- <command>`) or a short default.
+    Statusline {
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+        #[arg(last = true)]
+        wrapped: Vec<String>,
+    },
+    /// Rotate the local API token used by this computer's own apps and helpers.
+    ResetToken,
+    /// Send a message to a bot, optionally waiting for its reply.
+    Send(send_cli::SendArgs),
+    /// Message your bots from this terminal.
+    Tui {
+        /// Host to connect to (default: this computer). The API only answers local
+        /// callers: for another computer, forward its port with `ssh -L` and use the tunnel.
+        #[arg(long)]
+        url: Option<String>,
+        /// Token for `--url` (default: this computer's `~/.codync/token`).
+        #[arg(long, env = "CODYNC_TOKEN", hide_env_values = true)]
+        token: Option<String>,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// npm on this computer's Node, else on Codync's own (downloaded first): what setup
+    /// terminals install npm CLIs with.
+    #[command(hide = true)]
+    Npm {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Add Codync's own Node.js, for agents that run on it (an agent's setup step).
+    #[command(hide = true)]
+    Node,
+    /// Built-in MCP servers that bots are started with (stdio).
+    #[command(hide = true)]
+    Mcp {
+        #[command(subcommand)]
+        server: McpServer,
+    },
+}
+
+#[derive(Subcommand)]
+enum DevicesAction {
+    /// Show every allowed device (the default).
+    List,
+    /// Remove a device's access; it disconnects at once.
+    Revoke { key: String },
+}
+
+#[derive(Subcommand)]
+enum McpServer {
+    /// Launch a local connector without exposing its credentials in ACP config.
+    Local {
+        #[arg(long)]
+        connector: String,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// Invite the user to connect services securely.
+    Connectors {
+        #[arg(long)]
+        bot: String,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// Scheduled and event-triggered bot routines.
+    Routines {
+        #[arg(long)]
+        bot: String,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// Send the user chat messages.
+    Chat {
+        #[arg(long)]
+        bot: String,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// Discover and ask the user's other bots for help.
+    Team {
+        #[arg(long)]
+        bot: String,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// Create bots and change any bot's setup, for a bot that may manage the team.
+    Manage {
+        #[arg(long)]
+        bot: String,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// Search the bot's own chat history.
+    Memory {
+        #[arg(long)]
+        bot: String,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// For a Claude Code, Codex or other agent session on this computer that isn't a Codync bot:
+    /// list the user's bots (here and on their other computers), message one, read its reply.
+    /// Add it to the agent, for example `claude mcp add codync -- codync-host mcp network --name "Claude Code"`.
+    Network {
+        /// How the bots' chats show this agent.
+        #[arg(long, default_value = "Agent")]
+        name: String,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// Tools of the apps connected through Composio.
+    Composio {
+        #[arg(long)]
+        bot: String,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// A remote connector, with its sign-in handled by the host.
+    Remote {
+        #[arg(long)]
+        connector: String,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
+    /// See and operate this computer's desktop.
+    Computer {
+        #[arg(long)]
+        bot: String,
+        #[arg(long, default_value_t = service::DEFAULT_PORT)]
+        port: u16,
+    },
+}
+
+/// The database id + local API token live in the database; the token is mirrored to
+/// `~/.codync/token` (0600) for local helpers like the statusline command.
+fn open_store() -> Result<(store::Store, String, String)> {
+    let dir = service::data_dir();
+    std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    let db = dir.join("codync.db");
+    let store = store::Store::open(&db).with_context(|| format!("opening {}", db.display()))?;
+    let host_id = if let Some(v) = store.kv_get("host_id") {
+        v
+    } else {
+        let v = uuid::Uuid::new_v4().to_string();
+        store.kv_set("host_id", &v)?;
+        // A new install, whichever command made it: its first start is `host_started.first_run`.
+        store.kv_set(analytics::KV_STARTED, "")?;
+        v
+    };
+    let token = match store.kv_get("token") {
+        Some(v) => v,
+        None => rotate_token(&store)?,
+    };
+    Ok((store, host_id, token))
+}
+
+fn rotate_token(store: &store::Store) -> Result<String> {
+    let t = format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple());
+    store.kv_set("token", &t)?;
+    write_token_file(&t)?;
+    Ok(t)
+}
+
+fn write_token_file(token: &str) -> Result<()> {
+    let path = service::data_dir().join("token");
+    std::fs::write(&path, token).with_context(|| format!("writing {}", path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("restricting {}", path.display()))?;
+    }
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Every TLS connection (the relay, HTTPS) uses aws-lc-rs, also in builds that have ring too.
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    let cli = Cli::parse();
+    match cli.cmd.unwrap_or(Sub::Serve { port: service::DEFAULT_PORT, bind: "0.0.0.0".into() }) {
+        Sub::Serve { port, bind } => serve(&bind, port).await,
+        Sub::Pair { port, json } => pair_cli::pair(port, json).await,
+        Sub::Info { port, json } => info(port, json).await,
+        Sub::Send(args) => send_cli::run(args).await,
+        Sub::Import(args) => import_cli::run(args).await,
+        Sub::Devices { port, action } => match action.unwrap_or(DevicesAction::List) {
+            DevicesAction::List => {
+                let v = local_call(port, "devices", json!({})).await?;
+                for d in v["devices"].as_array().into_iter().flatten() {
+                    println!(
+                        "{}  {} ({}, {}){}",
+                        d["key"].as_str().unwrap_or_default(),
+                        d["name"].as_str().unwrap_or_default(),
+                        d["platform"].as_str().unwrap_or_default(),
+                        d["source"].as_str().unwrap_or_default(),
+                        if d["connected"] == true { "  connected" } else { "" }
+                    );
+                }
+                Ok(())
+            }
+            DevicesAction::Revoke { key } => {
+                local_call(port, "revokeDevice", json!({"key": key})).await?;
+                println!("Revoked.");
+                Ok(())
+            }
+        },
+        Sub::Access { port, action } => pair_cli::access(port, action.unwrap_or(pair_cli::AccessAction::List)).await,
+        Sub::Cloud(args) => cloud_cli::run(args).await,
+        Sub::Analytics(args) => analytics_cli::run(args).await,
+        Sub::Network(args) => network_cli::run(args).await,
+        Sub::Install { port } => {
+            open_store()?;
+            // Windows: the shell Claude Code runs status lines in varies (Git Bash, PowerShell), so
+            // the line stays the user's; usage still comes from `claude -p /usage` and ACP.
+            if cfg!(unix)
+                && environment::Environment::current() == environment::Environment::Main
+                && let Some(home) = dirs::home_dir()
+            {
+                match service::ensure_statusline(&home.join(".claude/settings.json")) {
+                    Ok(true) => println!(
+                        "Claude Code's status line now also reports usage limits to Codync (your own status line still shows)."
+                    ),
+                    Ok(false) => {}
+                    Err(e) => eprintln!("Couldn't set Claude Code's status line: {e}"),
+                }
+            }
+            service::install(port)?;
+            println!("Codync host installed and started on port {port}. Run `codync-host pair` to connect your phone.");
+            Ok(())
+        }
+        Sub::Compat => {
+            println!(
+                "{}",
+                serde_json::json!({"version": env!("CARGO_PKG_VERSION"), "minApp": compat::MIN_APP, "environment": environment::Environment::current().name()})
+            );
+            Ok(())
+        }
+        Sub::Update { check, status, auto, force, port, json, worker } => {
+            let status = if let Some(auto) = auto {
+                update::set_automatic(auto == "on")?
+            } else if status {
+                update::status()?
+            } else if check {
+                update::check().await?
+            } else if !worker && service::installed() {
+                tokio::task::spawn_blocking(move || update::spawn_worker(port, force)).await??;
+                update::status()?
+            } else {
+                update::apply(port, force, worker).await?
+            };
+            if json {
+                println!("{}", serde_json::to_string_pretty(&status)?);
+            } else {
+                println!(
+                    "Host {} · {}",
+                    status["currentVersion"].as_str().unwrap_or("unknown"),
+                    status["state"]["phase"].as_str().unwrap_or("ready")
+                );
+                println!("Automatic updates: {}", if status["automatic"] == true { "on" } else { "off" });
+                if let Some(version) = status["state"]["availableVersion"].as_str() {
+                    println!("Available version: {version}");
+                }
+                if let Some(error) = status["state"]["error"].as_str() {
+                    println!("Last error: {error}");
+                }
+            }
+            Ok(())
+        }
+        Sub::Stop => {
+            tokio::task::spawn_blocking(service::stop).await??;
+            println!("Codync host stopped.");
+            Ok(())
+        }
+        Sub::Uninstall => {
+            service::uninstall();
+            if environment::Environment::current() == environment::Environment::Main
+                && let Some(home) = dirs::home_dir()
+                && let Err(e) = service::restore_statusline(&home.join(".claude/settings.json"))
+            {
+                eprintln!("Couldn't restore Claude Code's status line: {e:#}");
+            }
+            println!("Codync host service removed. Data is kept in {}", service::data_dir().display());
+            Ok(())
+        }
+        Sub::Status { port } => {
+            let running = http()
+                .get(format!("http://127.0.0.1:{port}/health"))
+                .timeout(Duration::from_secs(2))
+                .send()
+                .await
+                .is_ok_and(|r| r.status().is_success());
+            println!(
+                "installed: {}\nrunning:   {running}\nport:      {port}\ndata:      {}",
+                service::installed(),
+                service::data_dir().display()
+            );
+            Ok(())
+        }
+        Sub::Node => agent::node::add().await,
+        Sub::Npm { args } => std::process::exit(agent::node::npm(&args).await?),
+        Sub::Statusline { port, wrapped } => {
+            statusline(port, wrapped.join(" ")).await;
+            Ok(())
+        }
+        Sub::ResetToken => {
+            let (store, _, _) = open_store()?;
+            rotate_token(&store)?;
+            println!("Token rotated. Restart the host so local helpers pick it up.");
+            Ok(())
+        }
+        Sub::Mcp { server: McpServer::Connectors { bot, port } } => {
+            mcp::serve(bot, port, mcp::Server::Connectors).await
+        }
+        Sub::Mcp { server: McpServer::Computer { bot, port } } => mcp::serve(bot, port, mcp::Server::Computer).await,
+        Sub::Mcp { server: McpServer::Routines { bot, port } } => mcp::serve(bot, port, mcp::Server::Routines).await,
+        Sub::Mcp { server: McpServer::Chat { bot, port } } => mcp::serve(bot, port, mcp::Server::Chat).await,
+        Sub::Mcp { server: McpServer::Team { bot, port } } => mcp::serve(bot, port, mcp::Server::Team).await,
+        Sub::Mcp { server: McpServer::Manage { bot, port } } => mcp::serve(bot, port, mcp::Server::Manage).await,
+        Sub::Mcp { server: McpServer::Memory { bot, port } } => mcp::serve(bot, port, mcp::Server::Memory).await,
+        Sub::Mcp { server: McpServer::Composio { bot, port } } => mcp::serve(bot, port, mcp::Server::Composio).await,
+        Sub::Mcp { server: McpServer::Network { name, port } } => mcp::serve(name, port, mcp::Server::Network).await,
+        Sub::Mcp { server: McpServer::Local { connector, port } } => mcp::serve_local(connector, port).await,
+        Sub::Mcp { server: McpServer::Remote { connector, port } } => mcp::serve_remote(connector, port).await,
+        Sub::Tui { url, token, port } => {
+            tui::run(url.unwrap_or_else(|| format!("http://127.0.0.1:{port}")), token).await
+        }
+    }
+}
+
+/// launchd appends to `host.log` forever. The service already holds it open as
+/// stdout (append mode), so truncate in place rather than rotating.
+fn cap_log() {
+    let log = service::data_dir().join("host.log");
+    if std::fs::metadata(&log).is_ok_and(|m| m.len() > 10 * 1024 * 1024)
+        && let Ok(f) = std::fs::OpenOptions::new().write(true).open(&log)
+    {
+        let _ = f.set_len(0);
+    }
+}
+
+async fn serve(bind: &str, port: u16) -> Result<()> {
+    let _instance_lock = tokio::task::spawn_blocking(service::lock_host).await??;
+    tokio::task::spawn_blocking(service::capture_binary_identity).await??;
+    let listener =
+        tokio::net::TcpListener::bind((bind, port)).await.with_context(|| format!("binding {bind}:{port}"))?;
+    cap_log();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "codync_host=info".into()),
+        )
+        // A failed log write would be reported with `eprintln!`, which panics when stderr is gone
+        // too (a closed terminal, a full disk): a log line must never take a task down.
+        .log_internal_errors(false)
+        .init();
+    let (store, host_id, token) = open_store()?;
+    write_token_file(&token)?;
+    let identity = identity::Identity::load_or_create(&service::data_dir())?;
+    tokio::task::spawn_blocking(backends::hydrate_path).await?;
+    let hub = hub::Hub::new(store, host_id, identity, token, port);
+    hub.start()?;
+    network::start(&hub).await;
+    analytics::host_started(&hub, service::started_by_service());
+    background::start(&hub);
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), bind, port, "codync-host listening");
+    // Peer addresses: some settings may only be changed from this computer.
+    let app = api::router(hub.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    // SSE/WebSocket clients can stay connected forever. Stop agents immediately
+    // on the signal instead of waiting for those connections to finish.
+    let server = axum::serve(listener, app).into_future();
+    tokio::pin!(server);
+    tokio::select! {
+        result = &mut server => result?,
+        () = shutdown_signal() => {},
+    }
+    hub.shutdown().await;
+    agent::acp::stopped().await;
+    analytics::flush_before_exit(&hub).await;
+    tracing::info!("codync-host stopped");
+    // A keychain read may still wait on an unlock prompt; dropping the runtime would wait for it.
+    std::process::exit(0)
+}
+
+/// Resolves on Ctrl-C or SIGTERM.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            tracing::warn!(%error, "can't listen for Ctrl-C");
+            std::future::pending::<()>().await;
+        }
+    };
+    #[cfg(unix)]
+    let term = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut s) => {
+                s.recv().await;
+            }
+            Err(error) => {
+                tracing::warn!(%error, "can't listen for SIGTERM");
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+    #[cfg(not(unix))]
+    let term = std::future::pending::<()>();
+    tokio::select! {
+        () = ctrl_c => {}
+        () = term => {}
+    }
+}
+
+/// Reads the identity and token only; never creates them (that's `serve`'s job).
+async fn info(port: u16, as_json: bool) -> Result<()> {
+    let dir = service::data_dir();
+    let (Some(id), Ok(token)) = (identity::Identity::load(&dir)?, std::fs::read_to_string(dir.join("token"))) else {
+        eprintln!("start codync-host once first");
+        std::process::exit(1);
+    };
+    let running = http()
+        .get(format!("http://127.0.0.1:{port}/health"))
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await
+        .is_ok_and(|r| r.status().is_success());
+    let v = json!({
+        "name": service::host_name(),
+        "computerId": id.computer_id(),
+        "signKey": id.sign_pub_b64(),
+        "boxKey": id.box_pub_b64(),
+        "version": env!("CARGO_PKG_VERSION"),
+        "port": port,
+        "token": token.trim(),
+        "running": running,
+    });
+    if as_json {
+        println!("{v}");
+    } else {
+        println!(
+            "name:     {}\ncomputer: {}\nversion:  {}\nport:     {port}\nrunning:  {running}",
+            v["name"].as_str().unwrap_or_default(),
+            v["computerId"].as_str().unwrap_or_default(),
+            env!("CARGO_PKG_VERSION"),
+        );
+    }
+    Ok(())
+}
+
+/// Never blocks Claude Code: 1 s budget, all errors ignored.
+async fn statusline(port: u16, wrapped: String) {
+    let mut input = String::new();
+    let _ = std::io::stdin().read_to_string(&mut input);
+    let v: serde_json::Value = serde_json::from_str(&input).unwrap_or_default();
+    if let Ok(token) = std::fs::read_to_string(service::data_dir().join("token")) {
+        let _ = http()
+            .post(format!("http://127.0.0.1:{port}/ingest/statusline"))
+            .bearer_auth(token.trim())
+            .json(&v)
+            .timeout(Duration::from_secs(1))
+            .send()
+            .await;
+    }
+    if !wrapped.trim().is_empty() {
+        // The user's own status line gets the same JSON on stdin.
+        use std::io::Write;
+        if let Ok(mut child) = shell::line(&wrapped).std().stdin(std::process::Stdio::piped()).spawn() {
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.write_all(input.as_bytes());
+            }
+            let _ = child.wait();
+        }
+        return;
+    }
+    let model = v["model"]["display_name"].as_str().unwrap_or("Claude");
+    let mut line = model.to_owned();
+    for (k, label) in [("five_hour", "5h"), ("seven_day", "7d")] {
+        if let Some(p) = v["rate_limits"][k]["used_percentage"].as_f64() {
+            let _ = write!(line, " · {label} {p:.0}%");
+        }
+    }
+    println!("{line}");
+}

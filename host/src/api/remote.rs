@@ -1,0 +1,219 @@
+//! Phones and accounts: push/activity registration, pairing, devices, cloud access and claims.
+
+use super::devices::Caller;
+use super::str_arg;
+use crate::LockExt;
+use crate::hub::{BotStatus, Hub};
+use crate::remote::cloud::TokenChange;
+use crate::remote::crypto;
+use crate::store::DeviceSource;
+use anyhow::{Context, Result, anyhow, bail};
+use serde_json::{Value, json};
+use std::ops::ControlFlow;
+use std::sync::Arc;
+
+pub(super) async fn call(hub: &Arc<Hub>, caller: &Caller, method: &str, b: Value) -> Result<ControlFlow<Value, Value>> {
+    Ok(ControlFlow::Break(match method {
+        "registerDevice" => {
+            let ticket = str_arg(&b, "ticket")?;
+            if let Some(relay) = b["relay"].as_str().filter(|r| r.starts_with("https://")) {
+                hub.store.kv_set("relay_url", relay.trim_end_matches('/'))?;
+            }
+            let push_key = b["pushKey"].as_str();
+            if let Some(k) = push_key {
+                crypto::unb64_n::<32>(k).context("`pushKey` must be a 32-byte X25519 key")?;
+            }
+            let name = b["name"].as_str().unwrap_or("iPhone");
+            hub.store.add_push_ticket(ticket, caller.device_key(), push_key, b["ctx"].as_str(), name)?;
+            json!({})
+        }
+        "unregisterDevice" => {
+            hub.store.remove_push_tickets(caller.device_key())?;
+            json!({})
+        }
+        "registerActivity" => {
+            let bot_id = str_arg(&b, "botId")?;
+            let row = hub.store.bot(bot_id)?.filter(|row| !row.deleted).ok_or_else(|| anyhow!("unknown bot"))?;
+            hub.store.add_activity_ticket(str_arg(&b, "ticket")?, bot_id, caller.device_key())?;
+            // Registration can finish after the task does. Send the current state immediately.
+            let state = hub.bot_json(&row);
+            let status = match state["status"].as_str() {
+                Some("working") => BotStatus::Working,
+                Some("needsInput") => BotStatus::NeedsInput,
+                Some("error") => BotStatus::Error,
+                _ => BotStatus::Idle,
+            };
+            // A send is acknowledged before its actor necessarily starts. An unanswered user
+            // message must not end the activity as "done" during that window.
+            let pending = status == BotStatus::Idle
+                && hub.store.last_message(bot_id).is_some_and(|message| message.author.is_none());
+            if !pending {
+                crate::remote::push::live_activity_update(
+                    hub,
+                    bot_id,
+                    &crate::hub::Runtime {
+                        status,
+                        started_at: state["startedAt"].as_i64(),
+                        ..crate::hub::Runtime::default()
+                    },
+                );
+            }
+            json!({})
+        }
+        "unregisterActivity" => {
+            hub.store.remove_activity_ticket(str_arg(&b, "botId")?, caller.device_key())?;
+            json!({})
+        }
+        "pairing" => pairing(hub, b["shortCode"] == true).await?,
+        "devices" => {
+            let connected = hub.connected.locked().clone();
+            let devices: Vec<Value> = hub
+                .store
+                .devices()?
+                .into_iter()
+                .map(|d| {
+                    let mut v = serde_json::to_value(&d).expect("Device is plain data and always serializes");
+                    v["connected"] = connected.contains_key(&d.key).into();
+                    v
+                })
+                .collect();
+            json!({"devices": devices})
+        }
+        "revokeDevice" => revoke(hub, str_arg(&b, "key")?)?,
+        // A device leaving on its own (deleting the account, starting over): the same as revoking it at the computer.
+        "forgetDevice" => revoke(hub, caller.device_key())?,
+        "accessRequests" => json!({"requests": hub.cloud.requests_json()}),
+        "pairingRequests" => json!({"requests": hub.pairing_requests.json()}),
+        // `codync-host pair` waits until its code is used.
+        "pairingCodeOpen" => json!({"open": hub.pairing.locked().valid(str_arg(&b, "code")?)}),
+        "decidePairing" => {
+            let approve = b["approve"].as_bool().ok_or_else(|| anyhow!("`approve` is required"))?;
+            crate::remote::pairing_requests::decide(hub, str_arg(&b, "requestId")?, approve)?;
+            json!({})
+        }
+        "decideAccessRequest" => {
+            let approve = b["approve"].as_bool().ok_or_else(|| anyhow!("`approve` is required"))?;
+            let id = str_arg(&b, "requestId")?;
+            crate::remote::cloud::decide(hub, id, approve, crate::remote::cloud::Approval::Code).await?;
+            json!({})
+        }
+        "unclaim" => {
+            crate::remote::cloud::unclaim(hub).await?;
+            json!({})
+        }
+        "cloudStatus" => serde_json::to_value(hub.cloud.status())?,
+        "setCloud" => {
+            let enabled = b["enabled"].as_bool().ok_or_else(|| anyhow!("`enabled` is required"))?;
+            serde_json::to_value(crate::remote::cloud::set_cloud(hub, enabled)?)?
+        }
+        "setCloudUrl" => {
+            let url = match &b["url"] {
+                Value::Null => None,
+                Value::String(url) => Some(url.as_str()),
+                _ => bail!("`url` must be a string"),
+            };
+            let token = TokenChange::from_json(b.get("token"))?;
+            serde_json::to_value(crate::remote::cloud::set_cloud_url(hub, url, token)?)?
+        }
+        "setApproval" => {
+            let approval = serde_json::from_value(b["approval"].clone()).context("`approval` is code or auto")?;
+            serde_json::to_value(crate::remote::cloud::set_approval(hub, approval)?)?
+        }
+        "setAssistants" => {
+            let on = b["enabled"].as_bool().ok_or_else(|| anyhow!("`enabled` is required"))?;
+            serde_json::to_value(crate::chat::team::assistant::set_enabled(hub, on)?)?
+        }
+        "claimSign" => {
+            let (claim_id, nonce, user_id) = (str_arg(&b, "claimId")?, str_arg(&b, "nonce")?, str_arg(&b, "userId")?);
+            crate::remote::owner::sign_claim(hub, claim_id, nonce, user_id).await?
+        }
+        // A phone finishing a join its pairing didn't complete (hello's `joinAccount`).
+        "joinAccount" => {
+            let user_id = crate::remote::owner::joinable_by(hub, caller.device_key())?
+                .ok_or_else(|| anyhow!("This computer can't join this phone's account now."))?;
+            crate::remote::owner::sign_claim(hub, str_arg(&b, "claimId")?, str_arg(&b, "nonce")?, &user_id).await?
+        }
+        _ => return Ok(ControlFlow::Continue(b)),
+    }))
+}
+
+/// Removes a device, and its cloud grant when it was approved through the account.
+fn revoke(hub: &Arc<Hub>, key: &str) -> Result<Value> {
+    let device = hub.store.device(key).ok_or_else(|| anyhow!("unknown device"))?;
+    hub.revoke_device(key)?;
+    if let Some(grant) = device.grant_id.filter(|_| device.source == DeviceSource::Account) {
+        tokio::spawn(crate::remote::cloud::revoke_grant(hub.clone(), grant));
+    }
+    Ok(json!({}))
+}
+
+/// A new one-time pairing code and the QR that carries it (§4.1).
+async fn pairing(hub: &Arc<Hub>, short_code: bool) -> Result<Value> {
+    let port = hub.port;
+    // Shells out to `tailscale`: keep it off the async workers.
+    let urls = tokio::task::spawn_blocking(move || crate::service::addresses(port)).await?;
+    let cloud = crate::remote::cloud::url(&hub.store);
+    if urls.is_empty() && cloud.is_none() {
+        bail!("No network address a phone could reach, and the Codync cloud is off.");
+    }
+    let issued = hub.pairing.locked().issue();
+    hub.auth_changed();
+    let url = crate::service::pairing_url(&crate::service::PairingQr {
+        name: &crate::service::host_name(),
+        computer_id: &hub.identity.computer_id(),
+        sign_key: &hub.identity.sign_pub_b64(),
+        box_key: &hub.identity.box_pub_b64(),
+        code: &issued.code,
+        urls: &urls,
+        cloud: cloud.as_deref(),
+    });
+    // Asked for (`codync-host pair`): a code to type instead of scanning, when the Codync cloud can hold the link.
+    let short_code = if short_code {
+        crate::remote::short_code::register(hub, &url, issued.expires_at)
+            .await
+            .inspect_err(|e| tracing::info!(error = format!("{e:#}"), "no short pairing code"))
+            .ok()
+    } else {
+        None
+    };
+    Ok(json!({"pairingUrl": url, "urls": urls, "expiresAt": issued.expires_at, "shortCode": short_code}))
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+    use crate::remote::identity::Identity;
+    use crate::store::{Device, Scope, Store};
+
+    #[tokio::test]
+    async fn a_device_forgets_only_itself() {
+        let dir = std::env::temp_dir().join(format!("codync-forget-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(&dir.join("t.db")).unwrap();
+        let hub = Hub::new(store, "test".into(), Identity::load_or_create(&dir).unwrap(), "token".into(), 0);
+        let phone = Device {
+            key: "me".into(),
+            name: "Phone".into(),
+            platform: "ios".into(),
+            source: DeviceSource::Local,
+            grant_id: None,
+            scopes: vec![Scope::Control, Scope::Screen],
+            lease_until: None,
+            created_at: 1,
+            last_seen_at: None,
+            account: None,
+        };
+        hub.store.put_device(&phone).unwrap();
+        hub.store.put_device(&Device { key: "other".into(), ..phone.clone() }).unwrap();
+        hub.store.add_push_ticket("t1", "me", None, None, "Phone").unwrap();
+        let me = Caller::Device { key: "me".into(), scopes: phone.scopes.clone() };
+
+        assert!(call(&hub, &me, "forgetDevice", json!({"key": "other"})).await.unwrap().is_break());
+        assert!(hub.store.device("me").is_none());
+        assert!(hub.store.device("other").is_some(), "only the caller's own device goes");
+        assert!(hub.store.push_tickets().is_empty());
+        assert!(call(&hub, &me, "forgetDevice", json!({})).await.is_err(), "already gone");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}

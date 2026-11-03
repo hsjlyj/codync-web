@@ -1,0 +1,132 @@
+.computer-roster-section {
+  flex: none;
+  min-width: 0;
+  transition: opacity var(--layout);
+}
+
+/* Its heading's lifted copy follows the pointer; the slot stays open. */
+.computer-roster-section.lifted {
+  opacity: 0;
+}
+
+.computer-roster-heading {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 12px 2px 4px;
+}
+
+.computer-roster-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  padding: 5px 4px;
+  color: var(--secondary);
+  border-radius: var(--radius-s);
+  cursor: grab;
+}
+
+.computer-roster-toggle:hover {
+  background: var(--bubble-agent);
+}
+/* Headings the pointer passes over while dragging don't light up. */
+.pointer-dragging .computer-roster-toggle:hover {
+  background: none;
+}
+
+.computer-roster-label {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+  font-size: var(--text-caption);
+  text-align: left;
+}
+
+.computer-roster-label strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.computer-roster-label > span {
+  color: var(--tertiary);
+  font-size: var(--text-caption);
+  white-space: nowrap;
+}
+
+/* The connection sits at the trailing edge, before the chevron. */
+.computer-roster-label > .computer-roster-status {
+  margin-left: auto;
+}
+
+.computer-roster-label > .warning {
+  color: var(--attention);
+}
+
+/* A computer's own Extensions, always beside its heading. */
+.computer-roster-extensions {
+  flex: none;
+}
+
+.computer-roster-chevron {
+  flex: none;
+  display: flex;
+  transition: transform var(--layout);
+}
+
+.computer-roster-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.computer-roster-content {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition: grid-template-rows var(--layout), opacity var(--layout);
+}
+
+.computer-roster-content.collapsed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.computer-roster-content > div {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* A section the user made: a quieter header than a computer's, its rows folding the same way. The
+   "Bots" label over the rows in no section sits where a header's chevron starts. */
+.roster-section-toggle,
+.roster-label {
+  width: 100%;
+  margin-top: 8px;
+  padding: 5px 8px;
+  color: var(--secondary);
+  border-radius: var(--radius-s);
+  text-align: left;
+}
+
+.roster-section-toggle:hover {
+  background: var(--bubble-agent);
+}
+
+.computer-roster-empty {
+  padding: 8px 10px 12px;
+  color: var(--tertiary);
+  font-size: var(--text-caption);
+}
+
+.sidebar.compact .computer-roster-toggle {
+  justify-content: center;
+  padding: 4px 0;
+  gap: 2px;
+}
+
+.roster-section-toggle,
+button.roster-label { cursor: grab; }
+.pointer-dragging .roster-section-toggle:hover { background: none; }

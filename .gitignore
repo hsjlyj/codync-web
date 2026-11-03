@@ -1,0 +1,33 @@
+.DS_Store
+
+# Xcode
+xcuserdata/
+DerivedData/
+build/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+# Xcode Cloud resolves packages only from the checked-in pins
+!apps/Codync.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
+# Secrets
+*.p8
+.dev.vars
+.wrangler/
+.claude/worktrees/
+
+# /brag launch video renders
+brag-output*/
+
+# Launch video projects
+videos/
+
+# Python bytecode
+__pycache__/
+
+# Local secrets (Clerk dev key for apps/desktop/tools/dev-account.mjs)
+.env
+.env.*
+!.env.*.example
