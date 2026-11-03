@@ -46,8 +46,11 @@
 3. **同步模型**：每次变更盖全局递增 `rev`；客户端追平后转实时，按 id upsert，
    不可解码的事件不能跳过（回退 rev 0 重追）。Web 端与手机/桌面端同规则。
 4. **端到端加密**：握手与帧格式见 [API 参考 §5.1](api-reference.md)；
-   帧编解码/握手实现必须过官方向量回归
-   `docs/reference/fixtures/remote-relay-vectors.json`（12 组）。
+   加密实现以官方向量回归（向量文件
+   `docs/reference/fixtures/remote-relay-vectors.json`，测试用副本在
+   `src/client/transport/channel-crypto.vectors.json`）。
+   断线重连按 close code 分流（已实现于 `channel-transport.ts`）：
+   4001 限次重试、4003/4410/4400 终止、4008 加倍退避、4011 立即重连。
 5. **依赖边界**：`@noble/ciphers`（ChaCha20-Poly1305，WebCrypto 不支持）、
    `@noble/curves`、`@noble/hashes` 挂在 Web 客户端；
    `@codync/shared` 保持**零运行时依赖**（ADR-001）。
@@ -56,12 +59,13 @@
 
 | 路径 | 内容 | 负责人/状态 |
 |------|------|------------|
-| `app/` | Next.js App Router（站点 + 客户端页面） | 希音开发中 |
-| `src/client/` | Web 客户端实现（ChannelTransport、状态层） | 希音开发中（未提交） |
-| `packages/shared/` | `@codync/shared` 0.1.0：`models.ts`（实体类型+纯函数）、`api-types.ts`（API 契约 + `/channel` 线类型），零运行时依赖 | 砚台，typecheck 通过 |
+| `app/client/` | 客户端路由：`/client` 连接页（演示模式 + 真实主机表单）、`/client/chat` 工作区（BotRoster + ThreadView + Composer + 连接徽标）、`/client/{bots,settings}` Phase 2 占位 | 希音，`29743ed` |
+| `src/client/transport/` | `host-transport.ts`（`HostTransport` 抽象 + `HostError` + close-code 决策类型）、`channel-crypto.ts`（hs1Input、transcriptHash、HKDF 方向密钥、ChaCha20-Poly1305 seal/open、Sealer/Opener，字节布局对齐 `crypto.rs`）、`channel-transport.ts`（`/channel` 直连：hello→welcome 验签→加密帧 RPC + 订阅事件）、`mock-transport.ts`（演示/测试假主机）；向量副本 `channel-crypto.vectors.json` | 希音，`29743ed` |
+| `src/client/store/` | `app-model.ts`：单主机远程模式，rev 游标、按 id upsert、resync 从 0 重追（砚台 sync 契约） | 希音，`29743ed` |
+| `src/client/use-app-model.ts`、`components/`、`views/` | React 接入（useSyncExternalStore）与视图（connect / roster / thread） | 希音，`29743ed` |
+| `packages/shared/` | `@codync/shared` 0.1.0：`models.ts`（实体类型+纯函数）、`api-types.ts`（API 契约 + `/channel` 线类型），零运行时依赖 | 砚台；已知修正项：`ChannelReply` 的 `r` 字段应为主机实际的 `ok`（channel.rs:494），待砚台改 |
 | `docs/` | 本目录 | 榫卯 |
-| `test/` | 测试 | 试金搭建中 |
-| `vitest.config.ts` | 单测配置 | 试金 |
+| `test/` + `vitest.config.ts` | 测试配置 | 试金 |
 | `content/` | 上游用户手册（Mdx） | 上游既有 |
 
 > 早期方案的 `relay/`（持 token PoC）与 `bridge/`（空壳）已随工作区定档删除；

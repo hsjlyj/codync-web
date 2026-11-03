@@ -22,31 +22,36 @@ npm install          # 新树尚未安装过依赖（2026-11-03 核实）
 安装完成后建议复跑一次 `npx --no-install tsc --noEmit`（`web/packages/shared/`）
 确认类型环境就绪。
 
-## 3. 常用命令（`web/` 下）
-
-| 命令 | 作用 | 状态 |
+## 3. 常用命令（`web/` 下）| 命令 | 作用 | 状态 |
 |------|------|------|
-| `npm run dev` | 启动站点（http://localhost:3000） | 新树未验证；迁移前旧树实测能进入编译阶段，待复测 |
-| `npm run build` | 静态导出构建 | 未验证 |
-| `npm run lint` | ESLint | 未验证 |
-| `npm run format:check` | Prettier 检查 | 未验证（`.prettierrc.json` 由希音新增） |
+| `npm run dev` | 启动站点（http://localhost:3000，客户端在 `/client`） | 未复跑；`next build` 已验证通过（希音，`29743ed`，4 个 client 路由入产物） |
+| `npm run build` | 静态导出构建 | 已验证（希音，`29743ed`） |
+| `npm run lint` | ESLint | 希音报 0 错 0 警（`29743ed`），本环境未复跑 |
+| `npm run format:check` | Prettier 检查 | 未验证 |
 | `npm run check:docs` | 站点文档检查（`scripts/check-docs.mjs`） | 未验证 |
-| `npm test` / `npm run test:watch` | Vitest 单测 | 用例由试金补充中 |
-| `npm run test:e2e` | Playwright E2E | 框架搭建中，未验证 |
-| `npx --no-install tsc --noEmit`（在 `packages/shared/`） | 共享包类型检查 | **已验证**（迁移前树，2026-11-03，exit 0） |
+| `npm test` / `npm run test:watch` | Vitest 单测 | **已验证**（2026-11-03 榫卯复跑：14/14，含 7 项官方向量逐字节回归） |
+| `npm run test:e2e` | Playwright E2E | 待试金补充用例 |
+| `npx --no-install tsc --noEmit`（在 `packages/shared/`） | 共享包类型检查 | **已验证**（2026-11-03 新树复跑，exit 0） |
 
 ## 4. 目录速览
 
 ```
 web/
-├── app/                # Next.js App Router（站点 + 客户端页面）
-├── src/client/         # Web 客户端实现（ChannelTransport、状态层；希音开发中）
-├── packages/shared/    # @codync/shared：实体类型 + API 契约 + /channel 线类型
-├── docs/               # 本文档目录
-├── test/               # 测试（试金搭建中）
-├── vitest.config.ts    # 单测配置
-├── content/            # 上游用户手册（Mdx）
-└── scripts/            # 站点脚本（含 check-docs.mjs）
+├── app/                        # Next.js App Router（官网 + 客户端）
+│   └── client/                 # /client 连接页 · /client/chat 工作区
+│                               # · /client/{bots,settings} Phase 2 占位
+├── src/client/                 # Web 客户端实现（测试与源码同目录 *.test.ts）
+│   ├── transport/              # host-transport / channel-crypto（含向量副本）
+│   │                           # / channel-transport / mock-transport
+│   ├── store/                  # app-model（rev 游标同步）
+│   ├── components/ · views/    # ConnectionBadge · connect / roster / thread 视图
+│   └── use-app-model.ts        # useSyncExternalStore 接 React
+├── packages/shared/            # @codync/shared：实体类型 + API 契约 + /channel 线类型
+├── docs/                       # 本文档目录
+├── test/                       # 测试基建（试金）
+├── vitest.config.ts            # 单测配置
+├── content/                    # 上游用户手册（Mdx）
+└── scripts/                    # 站点脚本（含 check-docs.mjs）
 ```
 
 关键源码参考（均在仓库内，v2.38.0）：
