@@ -19,6 +19,7 @@ import type {
 } from '@codync/shared'
 import { normalizeBot } from '@codync/shared'
 import { toBase64 } from './bytes'
+import { demoDirListing } from './mock-dirs'
 import { HostError, type HostTransport } from './host-transport'
 
 export class MockTransport implements HostTransport {
@@ -317,7 +318,7 @@ export class MockTransport implements HostTransport {
       }
       case 'listDirs': {
         const path = typeof b.path === 'string' ? b.path : ''
-        return this.dirListing(path) as T
+        return demoDirListing(path) as T
       }
       case 'usage': {
         const usage: Usage = {
@@ -426,79 +427,6 @@ export class MockTransport implements HostTransport {
   }
 
   private eventSink: ((event: unknown) => void) | null = null
-
-  /** 演示目录树：~/demo（git）+ ~/projects 工程，供 FolderPicker 逐级浏览。 */
-  private dirListing(path: string): DirListing {
-    const root: DirListing = {
-      path: '',
-      parent: null,
-      isGit: false,
-      recent: [
-        { path: '~/demo', usedAt: Date.now() },
-        { path: '~/projects/codync-web', usedAt: Date.now() - 3600_000 },
-      ],
-      dirs: [
-        { path: '~', name: '~（个人主目录）', isGit: false },
-        { path: '~/projects', name: 'projects', isGit: false },
-      ],
-    }
-    const home: DirListing = {
-      path: '~',
-      parent: '',
-      isGit: false,
-      ancestors: [{ path: '', name: '根目录', isGit: false }],
-      dirs: [
-        { path: '~/demo', name: 'demo', isGit: true },
-        { path: '~/projects', name: 'projects', isGit: false },
-      ],
-    }
-    const projects: DirListing = {
-      path: '~/projects',
-      parent: '~',
-      isGit: false,
-      ancestors: [
-        { path: '', name: '根目录', isGit: false },
-        { path: '~', name: '~', isGit: false },
-      ],
-      dirs: [{ path: '~/projects/codync-web', name: 'codync-web', isGit: true }],
-    }
-    const leaf = (path: string, parent: string, isGit: boolean): DirListing => ({
-      path,
-      parent,
-      isGit,
-      ancestors: [
-        { path: '', name: '根目录', isGit: false },
-        { path: '~', name: '~', isGit: false },
-        { path: '~/projects', name: 'projects', isGit: false },
-      ],
-      dirs: [],
-    })
-    const table: Record<string, DirListing> = {
-      '': root,
-      '~': home,
-      '~/projects': projects,
-      '~/projects/codync-web': leaf('~/projects/codync-web', '~/projects', true),
-      '~/demo': {
-        ...leaf('~/demo', '~', true),
-        ancestors: [
-          { path: '', name: '根目录', isGit: false },
-          { path: '~', name: '~', isGit: false },
-        ],
-      },
-    }
-    return (
-      table[path] ?? {
-        path,
-        parent: '~',
-        isGit: false,
-        ancestors: [
-          { path: '', name: '根目录', isGit: false },
-          { path: '~', name: '~', isGit: false },
-        ],
-        dirs: [],
-      }
-    )
-  }
 
   private static mockScreen: ScreenState = {
     enabled: false,
