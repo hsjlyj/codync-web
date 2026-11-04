@@ -125,3 +125,16 @@
 | 循环 import | ✅ HEAD 无 | 当前依赖链单向：views → app-model → {bot-admin, transport/*} → @codync/shared |
 
 **遗留动作**：① 希音拆分提交后我复审；② 试金把 Playwright 三条真正跑一遍并把结果贴群；③ 真实主机联调仍留 Phase 3。
+
+### app-model 拆分复审 — `8795333` + `03a87a1`（2026-11-04）
+
+**结论：通过，纯搬移属实，无 [BLOCK]**。我亲跑 HEAD：tsc exit 0、vitest **75/75**（12 文件；期间一次 74/75 为已知的 `bytes.test.ts` chunk 边界 flaky，重跑即绿）。
+
+| 检查项 | 结果 | 证据 |
+|--------|------|------|
+| 文件行数达标 | ✅ | app-model.ts 245 行（原 540）；entry-state 257 / real-host 104 / bot-state 48 / snapshot 38，均 <500 |
+| 无运行时循环 import | ✅ | 依赖单向 app-model → {bot-state, entry-state, real-host, snapshot}；real-host 对 app-model 为 `import type`（编译期擦除，无运行时环） |
+| 对外 API 不变 | ✅ | app-model 仍导出全部公开方法（connect/connectRealHost/forgetDevice/disconnect/respondPermission/markRead/sendMessage/uploadFiles/loadHistory/readUploadBytes…）并 `export type { AppSnapshot, ConnectionState }`；视图与 `app-model.test.ts` 零改动 |
+| 委托语义一致 | ✅ | `changed()` 快照通知语义原样保留；删除事件收窄逻辑在 bot-state 内原样搬移 |
+| vitest 不误收 e2e | ✅ | `03a87a1` 给 vitest.config.ts 加 `exclude: [..., 'e2e/**', 'playwright-report/**']`，Playwright 归 Playwright |
+| [SUGGESTION] | 🟡 | `real-host.ts` 用 `import type { AppModel }` 打破环是安全做法；若未来需要运行时引用，应改为窄接口注入而非直接 import 类 |
