@@ -41,7 +41,8 @@
 
 - **Given** 列表中已存在目标 Bot
 - **When** 打开编辑表单并保存修改
-- **Then** 发出 `updateBot`，列表按事件流更新显示新值；取消则不产生任何变更
+- **Then** 发出 `updateBot`（**`id` 必填**，hub.rs:251），列表按事件流更新显示新值；
+  取消则不产生任何变更
 - 字段校验：name 非空；model 取值限于 `agentModels` 返回范围
 
 ### F3 删除 Bot（故事 3）
@@ -91,5 +92,8 @@ kebab-case、vitest ≥80%、tsc 0 错、`next build` 通过、Conventional Comm
 
 | 议题 | 负责人 | 状态 |
 |------|--------|------|
-| 主机是否新增跨历史消息 `search` API | 渡口 / 若光 | 未决；未决前搜索仅本地过滤 |
+| 主机是否新增跨历史消息 `search` API | 渡口 / 若光 | Phase 2 确定本地过滤（渡口已核实主机无此方法）；是否新增 API 未决 |
 | 断开连接是否同时调 `forgetDevice` 撤销主机侧设备 | 砚边（安全口径） | 未确认；当前实现仅清本地 |
+
+> 方法载荷细节以 [主机集成清单](host-integration-checklist.md)（渡口）与
+> [API 参考](api-reference.md)（砚台，`06c8e3c` 含 Artifact/LibraryItem 建模）为准。
