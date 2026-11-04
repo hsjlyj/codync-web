@@ -252,7 +252,9 @@ export interface CoreApiCalls {
   termClose(b: { term: string }): Promise<Record<string, never>>
   /** Reserves a session (≤32 total, ≤4 per device, pending 60 s) before ICE gathering. */
   screenPrepare(b: { relay?: boolean; trickle?: boolean }): Promise<ScreenPrepareResult>
-  /** Sends the viewer's offer; the host answers with its SDP. Needs the screen scope. */
+  /** Sends the viewer's offer; the host answers with its SDP. Needs the screen scope.
+   *  MUST run after the `screenCandidates` subscription is open, or the host answers
+   *  400 "open screenCandidates before offering" (screen/signaling.rs:134). */
   screenOffer(b: { session: string; sdp: string; display?: number }): Promise<Record<string, unknown>>
   screenCandidate(b: { session: string; candidate: unknown }): Promise<Record<string, never>>
   screenClose(b: { session: string }): Promise<Record<string, never>>

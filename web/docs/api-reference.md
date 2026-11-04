@@ -98,6 +98,7 @@
 | `screenStatus` **P3** | `{}` | `ScreenState` |
 | `requestScreenPermission` 🔒 | `{…}` | 请求系统权限 |
 | `screenPrepare` **P3** | `{relay?, trickle?}` | `{session, ice…}`（需 Screen 范围） |
+| 信令顺序 **P3** | **先开 `screenCandidates` 订阅，再发 `screenOffer`**（screen/signaling.rs:134，否则 400 "open screenCandidates before offering"）；`trickle:false` 时无需订阅 |
 | `screenOffer` **P3** | `{session, sdp, display?}` | 应答 SDP |
 | `screenCandidate` **P3** | `{session, candidate}` | `{}` |
 | `screenClose` **P3** | `{session}` | `{}` |
