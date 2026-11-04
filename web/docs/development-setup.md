@@ -29,7 +29,7 @@ npm install          # 新树尚未安装过依赖（2026-11-03 核实）
 | `npm run lint` | ESLint | 希音报 0 错 0 警（`29743ed`），本环境未复跑 |
 | `npm run format:check` | Prettier 检查 | 未验证 |
 | `npm run check:docs` | 站点文档检查（`scripts/check-docs.mjs`） | 未验证 |
-| `npm test` / `npm run test:watch` | Vitest 单测 | **已验证**（2026-11-04 榫卯复跑于 `d9f34df`：**73/73**，12 个文件，含 7 项官方向量逐字节回归） |
+| `npm test` / `npm run test:watch` | Vitest 单测 | **已验证**（2026-11-04 榫卯复跑于 `dc7740e`：**75/75**，12 个文件，含 7 项官方向量逐字节回归 + 2 项 mock-WebSocket 握手集成） |
 | `npm run test:e2e` | Playwright E2E | 待试金补充用例 |
 | `npx --no-install tsc --noEmit`（在 `packages/shared/`） | 共享包类型检查 | **已验证**（2026-11-03 新树复跑，exit 0） |
 
