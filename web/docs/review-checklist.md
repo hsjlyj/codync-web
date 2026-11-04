@@ -167,3 +167,22 @@ Phase 3 引入三类浏览器重资源，**资源清理是 [BLOCK] 级检查项*
 - [ ] 无新的 `any`、无 console 泄露（含 credential）
 - [ ] 新功能有单测；协议行为以砚台 dbcf53d 类型为准
 - [ ] 无新的 [BLOCK]：尤其资源泄漏、凭据落盘、订阅不取消
+
+### Phase 3 任务 A 审查 — `e3f89be`→`1555d6f`（2026-11-04）
+
+**结论：通过，无 [BLOCK]**。我亲跑 HEAD：tsc exit 0、vitest **95/95**（16 文件；首次跑 94/95 为已知 `bytes.test.ts` flaky，重跑即绿）。逐条核对希音给的锚点，全部属实：
+
+| 红线项 | 结果 | 证据 |
+|--------|------|------|
+| xterm dispose on unmount | ✅ | TerminalView.tsx:80-84 cleanup 顺序 `controller.stop()`（发 cancel+termClose）→ `term.dispose()`；ResizeObserver disconnect；xterm 动态 import 避开 SSR；scrollback 5000 行兜底 |
+| term 订阅取消 | ✅ | `TerminalController.stop()`（terminal.ts:92-109）幂等：先退订再 termClose；输入微批 queueMicrotask 合并 |
+| WebRTC pc.close | ✅ | screen-view.ts `stop()`/`fail()` 双路径都幂等走 退订+`pc.close()`+`screenClose`（测试断言 screenClose 恰一次） |
+| srcObject 释放 | ✅ | ScreenShareView.tsx:44 cleanup `video.srcObject = null` |
+| 信令顺序 | ✅ | prepare → **先开 screenCandidates 订阅** → offer（裸 SDP 字符串 :99）→ answer（:84-102），与 signaling.rs:134 硬约束一致 |
+| 本地候选方向 | ✅ | 经 `screenCandidate` 请求上送（:166），`pc.addIceCandidate` 只用于下行（:187）；串行冲刷链防 complete 乱序（:152-157） |
+| 403 用户话术 | ✅ | describeScreenError 映射「缺少 Screen scope」（:226-230），非鸭子探测 |
+| SpeechRecognition 清理 | ✅ | speech-input.ts stop() 先摘 onresult/onerror/onend 再 stop；Composer.tsx:51 unmount 兜底 `speechRef.current?.stop()`；SSR 安全（speechSupported 查 window）；无 credential 处理面 |
+| mock 拆分纯搬移 | ✅ | `e3f89be` 仅把目录树搬入 mock-dirs.ts，MockTransport 接口零变化（diff 无 export 签名增删）；mock-transport 519→460 行达标 |
+| 无 any / 日志泄露 | ✅ | 7 个新文件 grep `as any\|console.log` 零命中 |
+| 文件行数 | ✅ | 最大 screen-view.ts 230 行，全部 <500 |
+| /screen-candidates 路由 | ✅ | parseStreamPath :504-505 已支持，sub=`screenCandidates` |
