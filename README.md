@@ -132,7 +132,7 @@ cf deploy          # 生成 <worker名>.<子域>.workers.dev，如 codync-web.xx
 
 ### 部署后访问
 
-浏览器打开 `https://<你的域名>/client`。
+浏览器打开站点根地址即可——`/` 会自动跳转到 `/client`（Web 客户端入口）。
 
 ## 5. 连接主机（配对）
 
