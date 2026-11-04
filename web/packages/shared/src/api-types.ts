@@ -197,6 +197,8 @@ export type ApiCaller = <B = unknown, R = unknown>(method: string, body?: B) => 
 export interface CoreApiCalls {
   hello(): Promise<Hello>
   history(b: { botId: string; beforeSeq?: number; limit?: number }): Promise<{ entries: Entry[] }>
+  /** Notices between a bot and one peer (the newest 200), for the read-only bot conversation sheet. */
+  botConversation(b: { botId: string; peerId: string }): Promise<{ entries: Entry[] }>
   send(b: {
     botId: string
     text?: string
@@ -228,6 +230,7 @@ export interface CoreApiCalls {
   switchBack(b: { botId: string }): Promise<Record<string, never>>
   newSession(b: { botId: string }): Promise<Record<string, never>>
   react(b: { entryId: string; emoji: string }): Promise<{ entry: Entry }>
+  /** The host derives the bot from the entry's author — do NOT send `botId` (api/bots.rs:270). */
   respondPermission(b: { entryId: string; optionId?: string | null }): Promise<Record<string, never>>
   listDirs(b: { path?: string }): Promise<DirListing>
   selectWorkspace(b: { path: string }): Promise<{ path: string }>
@@ -237,6 +240,39 @@ export interface CoreApiCalls {
   screenStatus(): Promise<ScreenState>
   pairing(b: { shortCode?: boolean }): Promise<PairingInfo>
   devices(): Promise<{ devices: AuthorizedDevice[] }>
+}
+
+// ---- Pairing-channel `pair` (remote/channel/pairing.rs — NOT an api::dispatch method) ----
+
+/** A device certificate the Codync cloud signed (remote/certificate.rs): the pairing
+ *  flow presents it; a missing one is rejected with close 4400. */
+export interface DeviceCertificate {
+  /** Stringified JSON `{v: 1, deviceKey, userId, email, exp}`. */
+  payload: string
+  /** Cloud signature over `DOMAIN + payload`, base64url. */
+  sig: string
+}
+
+/** The one message a pairing channel accepts (`{"m":"pair"}`, pairing.rs:200). */
+export interface PairRequest {
+  /** The one-time pairing code from `pairing` (16-byte base64url, or the QR URL's code). */
+  code: string
+  /** Device name as the computer's user will see it on the approval prompt. */
+  name: string
+  platform: string
+  certificate: DeviceCertificate
+  /** Present when the phone wants the computer to join its cloud account. */
+  claim?: { claimId: string; nonce: string }
+}
+
+/** `pair` success reply; the socket then closes with `4100 paired` — reconnect as an
+ *  authorized device (new channel, no `pair` flag). The device is registered with
+ *  both `control` and `screen` scopes (pairing.rs:120). */
+export interface PairReply {
+  computerId: string
+  name: string
+  /** The signed claim, when the request carried one and the computer joined the account. */
+  claim?: unknown | null
 }
 
 // ---- Sync model ----

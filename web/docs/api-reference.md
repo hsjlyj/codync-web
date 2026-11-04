@@ -115,15 +115,15 @@
 
 | 方法 | 请求 | 应答 |
 |------|------|------|
-| `history` | `{botId, beforeSeq?, limit?(1-500, 默认100)}` | `{entries: Entry[]}` |
-| `botConversation` | `{botId, peerId}` | `{entries}`（两 bot 间通知，≤200 条） |
-| `send` | `{botId, text?, attachments?(uploadId[]), clientNonce?, replyTo?, pasted?, call?}` | `{entry}`（text 与 attachments 不能全空；clientNonce 幂等去重） |
-| `upload` | `{botId, uploadId, name, data(b64块), offset?, done?}` | `{attachment}` |
-| `readUpload` | `{botId, uploadId, offset?}` | `{data(b64), size}`（384KB/块） |
-| `readFile` | `{entryId, fileId, offset}` | `{data(b64), size}`（仅 bot 最终回复的文件） |
-| `createBot` | `BotDraft` | `{bot}` |
-| `updateBot` | `BotDraft` | `{bot}` |
-| `deleteBot` | `{botId}` | `{}` |
+| `history` **P1** | `{botId, beforeSeq?, limit?(1-500, 默认100)}` | `{entries: Entry[]}` |
+| `botConversation` **P1** | `{botId, peerId}` | `{entries}`（两 bot 间通知，≤200 条） |
+| `send` **P1** | `{botId, text?, attachments?(uploadId[]), clientNonce?, replyTo?, pasted?, call?}` | `{entry}`（text 与 attachments 不能全空；clientNonce 幂等去重） |
+| `upload` **P1** | `{botId, uploadId, name, data(b64块), offset?, done?}` | `{attachment}` |
+| `readUpload` **P1** | `{botId, uploadId, offset?}` | `{data(b64), size}`（384KB/块） |
+| `readFile` **P1** | `{entryId, fileId, offset}` | `{data(b64), size}`（仅 bot 最终回复的文件） |
+| `createBot` **P1** | `BotDraft` | `{bot}` |
+| `updateBot` **P1** | `BotDraft` | `{bot}` |
+| `deleteBot` **P1** | `{botId}` | `{}` |
 | `reorderBots` | `{ids[]}` | `{}` |
 | `renameSection` | `{from, to?(缺失即错，null/空名=移除)}` | `{}` |
 | `setLead` | `{botId}` | `{}` |
@@ -132,7 +132,7 @@
 | `switchBack` | `{botId}` | `{}` |
 | `newSession` | `{botId}` | `{}` |
 | `react` | `{entryId, emoji}` | `{entry}` |
-| `respondPermission` | `{entryId, optionId?}` | `{}` |
+| `respondPermission` **P1** | `{entryId, optionId?}` | `{}` |
 | `memory` / `memoryFile` | `{botId, …}` | 记忆内容/文件 |
 | `library` | `{botId}` | artifact 列表 |
 | `readArtifact` / `renameArtifact` | `{botId, id…}` | 内容/确认 |
@@ -170,7 +170,7 @@
 
 | 方法 | 请求 | 应答 |
 |------|------|------|
-| `pairing` 🔒 | `{shortCode?}` | `PairingInfo{pairingUrl, urls, expiresAt, shortCode?}`（10 分钟有效，最多 5 个） |
+| `pairing` 🔒 **P1** | `{shortCode?}` | `PairingInfo{pairingUrl, urls, expiresAt, shortCode?}`（10 分钟有效，最多 5 个） |
 | `devices` 🔒 | `{}` | `{devices: AuthorizedDevice[]}` |
 | `revokeDevice` 🔒 | `{key}` | `{}` |
 | `forgetDevice` | `{}`（设备只删自己） | `{}` |
@@ -229,6 +229,7 @@ Composio：`composioCall` 🔒 · `composioStatus` · `setComposioKey` · `compo
 | 请求封套 | `{"id": N, "m": "<method>", "b": {...}}` → `{"id": N, "ok": ...}` 或 `{"id": N, "err": {status, message}}`；订阅 `{"id": N, "sub": "<kind>"}` |
 | 拒绝码 | 4001 未授权/租约过期/签名错 · 4003 已撤销 · 4008 限流 · 4400 版本不支持 · 4410 配对未开放（devices.rs:117-152）——RemoteClient 重连 UX 按此区分 |
 | 配对码 | 10 分钟有效 · 最多 5 个并存 · 限流 3 次/分/来源、10 次/分/主机（devices.rs:174-177）——认证流程的错误提示按此设计 |
+| 配对方法 `pair` | 配对通道内唯一消息（非 dispatch 方法）：`{code, name, platform, certificate, claim?}` → `{"id","ok":{computerId, name, claim?}}`；成功后通道以 **4100 paired** 关闭，客户端须以已授权设备重开通道（设备获得 control+screen 双范围，pairing.rs:120） |
 | **回归锚点** | 仓库内 `docs/reference/fixtures/remote-relay-vectors.json`：`handshake`（dk/ek/n/签名输入/transcript hash/派生密钥）· `frames`（3 条 seal/open，含计数器与 final 标志）· `sas`/`pairCheck`/`claim`/`push`/`mailbox` 等 12 组官方向量——Web 端握手与帧编解码的单测必须以它为基线（主机 `crypto.rs` 测试同源） |
 
 ### 5.2 浏览器端加密原语可行性
