@@ -110,3 +110,18 @@
 - `bytes.test.ts` chunk 边界 roundtrip 偶发超时（jsdom GC 抖动），试金已建议 `testTimeout: 15000`
 - 真实主机 E2E 联调待 Phase 3（需 cargo 编译 host + 云证书）
 - Playwright 冒烟三条建议补：演示模式发消息 / bots/new 提交 / settings 断开
+
+### 收尾审查 — `5f271eb..7a56487`（2026-11-04，审查范围至 HEAD）
+
+**结论：无新 [BLOCK]**。HEAD（`7a56487`）代码面干净；工作树内希音的 app-model 拆分尚未提交（中间态 tsc 报 3 错属正常，提交时会消除）。
+
+| 检查项 | 结果 | 证据 |
+|--------|------|------|
+| bot-admin 与 api-types 一致 | ✅ | `createBot(BotDraft)` / `updateBot` 强制 `id`（bot-admin.ts:32 抛错）/ `deleteBot({botId})` / `reorderBots({ids})` / `renameSection({from,to})`，与砚台 `06c8e3c` 核实口径一致 |
+| Phase 2 代码（已 commit 部分） | ✅ | `92a9e03..d9f34df` 已在上文审查通过；其后 `a389f73`/`24aa225`/`3c93208` 已复审清退 |
+| 无 sk 警示（3c93208） | ✅ | ConnectForm 手工路径下 amber 警示，`role="note"`，文案准确（welcome 校验跳过、建议配对链接） |
+| Playwright E2E 骨架 | ⚠️ 骨架就位、未实跑 | `web/e2e/` 三条（demo-chat / bot-crud / settings），`playwright.config.ts` webServer 自动起 next dev；`--list` 可识别 3 条。**未执行过真实 run**（需 next dev 可启动），试金名下 untracked |
+| app-model 拆分 | ⏳ 进行中 | 工作树可见 `bot-state.ts`(50L)/`entry-state.ts`(257L)/`snapshot.ts`(38L)/`real-host.ts`(104L) 草稿，app-model.ts 未提交版本已删 381 行；**提交后需复审循环 import 与 re-export 兼容性**（ConnectionBadge/use-app-model 依赖 app-model 的导出类型） |
+| 循环 import | ✅ HEAD 无 | 当前依赖链单向：views → app-model → {bot-admin, transport/*} → @codync/shared |
+
+**遗留动作**：① 希音拆分提交后我复审；② 试金把 Playwright 三条真正跑一遍并把结果贴群；③ 真实主机联调仍留 Phase 3。
