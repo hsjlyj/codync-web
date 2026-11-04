@@ -15,6 +15,7 @@ import { ChannelTransport } from '../transport/channel-transport'
 import { clearDevice, createDeviceSigner, loadDeviceSigner, saveDeviceMeta } from '../transport/device-key'
 import { HostError, type HostTransport, type TransportStatus } from '../transport/host-transport'
 import { normalizeChannelUrl, parsePairingUrl } from '../transport/pairing-url'
+import { BotAdmin } from './bot-admin'
 
 export type ConnectionState = TransportStatus
 
@@ -49,6 +50,8 @@ const INITIAL: AppSnapshot = {
 }
 
 export class AppModel {
+  /** Bot 管理编排（CRUD/排序/分组/目录浏览）——I/O 仍在 store 层，视图只调用它。 */
+  readonly admin = new BotAdmin(this)
   private transport: HostTransport | null = null
   private stopEvents: (() => void) | null = null
   private botsById = new Map<string, Bot>()
@@ -69,6 +72,14 @@ export class AppModel {
   private changed(patch: Partial<AppSnapshot> = {}) {
     this.snap = { ...this.snap, ...patch }
     for (const listener of this.listeners) listener()
+  }
+
+  // MARK: 通道调用（编排层用）
+
+  /** 加密通道上的方法调用；未连接即抛错。 */
+  call<T = unknown>(method: string, body?: unknown): Promise<T> {
+    if (!this.transport) return Promise.reject(new Error('未连接主机'))
+    return this.transport.call<T>(method, body)
   }
 
   // MARK: 连接
