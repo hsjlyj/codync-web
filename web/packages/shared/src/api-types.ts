@@ -245,6 +245,24 @@ export interface CoreApiCalls {
   usage(b: { refresh?: boolean }): Promise<Usage>
   refreshBackends(): Promise<{ backends: Backend[] }>
   icons(): Promise<{ icons: CustomIcons; iconsRevision?: number }>
+  /** Starts a host-owned setup terminal; subscribe its output with `sub: "term"`. */
+  agentSetup(b: { step: 'install' | 'login' | 'node'; backend?: string; method?: string; cols?: number; rows?: number }): Promise<{ term: string }>
+  termInput(b: { term: string; data: string }): Promise<Record<string, never>>
+  termResize(b: { term: string; cols: number; rows: number }): Promise<Record<string, never>>
+  termClose(b: { term: string }): Promise<Record<string, never>>
+  /** Reserves a session (≤32 total, ≤4 per device, pending 60 s) before ICE gathering. */
+  screenPrepare(b: { relay?: boolean; trickle?: boolean }): Promise<ScreenPrepareResult>
+  /** Sends the viewer's offer; the host answers with its SDP. Needs the screen scope. */
+  screenOffer(b: { session: string; sdp: string; display?: number }): Promise<Record<string, unknown>>
+  screenCandidate(b: { session: string; candidate: unknown }): Promise<Record<string, never>>
+  screenClose(b: { session: string }): Promise<Record<string, never>>
+  screenTakeover(b: { on?: boolean }): Promise<ScreenState>
+  /** Voice keys are entered at the computer (`setVoiceKey` is LOCAL_ONLY); a device only reads. */
+  voiceStatus(): Promise<VoiceStatus>
+  voiceSession(b: { provider: string; model: string; voice: string }): Promise<{ credential: unknown }>
+  voiceModels(b: { provider: string }): Promise<Record<string, unknown>>
+  voiceTranscribe(b: { provider: string; model: string; audio: string }): Promise<Record<string, unknown>>
+  voiceSpeak(b: { provider: string; model: string; voice: string; text: string }): Promise<Record<string, unknown>>
   screenStatus(): Promise<ScreenState>
   pairing(b: { shortCode?: boolean }): Promise<PairingInfo>
   devices(): Promise<{ devices: AuthorizedDevice[] }>
@@ -281,6 +299,43 @@ export interface PairReply {
   name: string
   /** The signed claim, when the request carried one and the computer joined the account. */
   claim?: unknown | null
+}
+
+/** Channel subscriptions (channel/subscriptions.rs): `events` (b: {since?, client?}) →
+ *  `HostEvent` items; `term` (b: {term}) → `TermEvent` items, 404 when the terminal is
+ *  gone; `screenCandidates` (b: {session}, screen scope) → ordered ICE candidates.
+ *  Each item arrives as `{"id","ev"}`; the stream ends with `{"id","end":true}`;
+ *  over `MAX_SUBS` concurrent subs answers 429. */
+export interface ChannelEventPush {
+  id: number
+  ev: unknown
+}
+
+export interface ChannelEndPush {
+  id: number
+  end: true
+}
+
+export type ChannelPush = ChannelEventPush | ChannelEndPush
+
+/** One terminal event: output bytes (base64) or the exit code. */
+export type TermEvent = { type: 'output'; data: string } | { type: 'exit'; code: number }
+
+export interface IceServer {
+  urls: string[]
+  username?: string
+  credential?: string
+}
+
+export interface ScreenPrepareResult {
+  session: string
+  iceServers: IceServer[]
+  expiresAt: number
+  trickle: boolean
+}
+
+export interface VoiceStatus {
+  providers: { provider: string; configured: boolean; defaults: unknown }[]
 }
 
 /** One `library` item: an artifact record, or a file message's attachment. */

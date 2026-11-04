@@ -77,31 +77,31 @@
 | `usage` **P2** | `{refresh?}` | `Usage` |
 | `listDirs` **P2** | `{path?}` | `DirListing`（含 recent） |
 | `selectWorkspace` **P2** | `{path}` | `{path}`（校验可读并记忆） |
-| `agentSetup` | `{backend, step(install\|login\|node), method?, cols?, rows?}` | `{term: id}` |
+| `agentSetup` **P3** | `{backend, step(install\|login\|node), method?, cols?, rows?}` | `{term: id}` |
 | `agentModels` | `{backend}` | 该 agent 可用模型 |
 | `agentAuth` | `{backend}` | `{signedIn, …}` |
 | `agentAuthenticate` | `{backend, method}` | `{signedIn, …}` |
 | `setAgentEnv` | `{backend, vars}` | 状态 |
-| `termInput` | `{term, data}` | `{}` |
-| `termResize` | `{term, cols, rows}` | `{}` |
-| `termClose` | `{term}` | `{}` |
+| `termInput` **P3** | `{term, data}` | `{}` |
+| `termResize` **P3** | `{term, cols, rows}` | `{}` |
+| `termClose` **P3** | `{term}` | `{}` |
 | `hostUpdateStatus` 🔒 | `{}` | 更新状态 |
 | `checkHostUpdate` 🔒 | `{}` | 检查结果 |
 | `setHostAutomaticUpdates` 🔒 | `{enabled}` | `{}` |
 | `installHostUpdate` | `{force?}` | `{scheduled}`（bot 忙时拒绝） |
-| `voiceStatus` | `{}` | 语音配置状态 |
-| `setVoiceKey` 🔒 | `{provider, key?}` | `{}` |
-| `voiceSession` | `{provider, model, voice}` | 会话凭据 |
-| `voiceModels` | `{provider}` | 模型列表 |
-| `voiceTranscribe` | `{provider, model, audio}` | 文本 |
-| `voiceSpeak` | `{provider, model, voice, text}` | 音频 |
-| `screenStatus` | `{}` | `ScreenState` |
+| `voiceStatus` **P3** | `{}` | 语音配置状态 |
+| `setVoiceKey` 🔒 **P3** | `{provider, key?}` | `{}` |
+| `voiceSession` **P3** | `{provider, model, voice}` | 会话凭据 |
+| `voiceModels` **P3** | `{provider}` | 模型列表 |
+| `voiceTranscribe` **P3** | `{provider, model, audio}` | 文本 |
+| `voiceSpeak` **P3** | `{provider, model, voice, text}` | 音频 |
+| `screenStatus` **P3** | `{}` | `ScreenState` |
 | `requestScreenPermission` 🔒 | `{…}` | 请求系统权限 |
-| `screenPrepare` | `{relay?, trickle?}` | `{session, ice…}`（需 Screen 范围） |
-| `screenOffer` | `{session, sdp, display?}` | 应答 SDP |
-| `screenCandidate` | `{session, candidate}` | `{}` |
-| `screenClose` | `{session}` | `{}` |
-| `screenTakeover` | `{on?}` | `ScreenState` |
+| `screenPrepare` **P3** | `{relay?, trickle?}` | `{session, ice…}`（需 Screen 范围） |
+| `screenOffer` **P3** | `{session, sdp, display?}` | 应答 SDP |
+| `screenCandidate` **P3** | `{session, candidate}` | `{}` |
+| `screenClose` **P3** | `{session}` | `{}` |
+| `screenTakeover` **P3** | `{on?}` | `ScreenState` |
 
 > 另有 `screenCandidates`：不是 HTTP 方法，是 `/channel` WebSocket 的 ICE 候选订阅（`remote/channel/subscriptions.rs`），同样受 Screen 范围限制。
 | `setScreenEnabled` 🔒 | `{enabled}` | `ScreenState` |
@@ -232,6 +232,7 @@ Composio：`composioCall` 🔒 · `composioStatus` · `setComposioKey` · `compo
 | 拒绝码 | 4001 未授权/租约过期/签名错 · 4003 已撤销 · 4008 限流 · 4400 版本不支持 · 4410 配对未开放（devices.rs:117-152）——RemoteClient 重连 UX 按此区分 |
 | 配对码 | 10 分钟有效 · 最多 5 个并存 · 限流 3 次/分/来源、10 次/分/主机（devices.rs:174-177）——认证流程的错误提示按此设计 |
 | 配对方法 `pair` | 配对通道内唯一消息（非 dispatch 方法）：`{code, name, platform, certificate, claim?}` → `{"id","ok":{computerId, name, claim?}}`；成功后通道以 **4100 paired** 关闭，客户端须以已授权设备重开通道（设备获得 control+screen 双范围，pairing.rs:120） |
+| 订阅（P3） | 三种：`events`（`b:{since?,client?}`，下发 `HostEvent`）· `term`（`b:{term}`，404=终端已关）· `screenCandidates`（`b:{session}`，需 Screen 范围）；每项以 `{"id","ev"}` 下发、流结束发 `{"id","end":true}`、并发超上限应 429（subscriptions.rs）。term 事件两种：`{"type":"output","data":<base64>}` / `{"type":"exit","code":n}` |
 | **回归锚点** | 仓库内 `docs/reference/fixtures/remote-relay-vectors.json`：`handshake`（dk/ek/n/签名输入/transcript hash/派生密钥）· `frames`（3 条 seal/open，含计数器与 final 标志）· `sas`/`pairCheck`/`claim`/`push`/`mailbox` 等 12 组官方向量——Web 端握手与帧编解码的单测必须以它为基线（主机 `crypto.rs` 测试同源） |
 
 ### 5.2 浏览器端加密原语可行性
