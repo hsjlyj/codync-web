@@ -22,13 +22,14 @@ npm install          # 新树尚未安装过依赖（2026-11-03 核实）
 安装完成后建议复跑一次 `npx --no-install tsc --noEmit`（`web/packages/shared/`）
 确认类型环境就绪。
 
-## 3. 常用命令（`web/` 下）| 命令 | 作用 | 状态 |
+## 3. 常用命令（`web/` 下）
+
+| 命令 | 作用 | 状态 |
 |------|------|------|
-| `npm run dev` | 启动站点（http://localhost:3000，客户端在 `/client`） | 未复跑；`next build` 已验证通过（希音，`29743ed`，4 个 client 路由入产物） |
-| `npm run build` | 静态导出构建 | 已验证（希音，`29743ed`） |
+| `npm run dev` | 启动站点（http://localhost:3000，根路径重定向到 `/client`） | 未复跑；构建见下行 |
+| `npm run build` | 静态导出构建 | **已验证**（2026-11-04 营销站下线后榫卯实测：**13 个静态页**，`/` 重定向 + 9 个 /client 路由 + 404） |
 | `npm run lint` | ESLint | 希音报 0 错 0 警（`29743ed`），本环境未复跑 |
 | `npm run format:check` | Prettier 检查 | 未验证 |
-| `npm run check:docs` | 站点文档检查（`scripts/check-docs.mjs`） | 未验证 |
 | `npm test` / `npm run test:watch` | Vitest 单测 | **已验证**（2026-11-04 榫卯复跑于 `17de461`：**95/95**，16 个文件，含 7 项官方向量逐字节回归 + 2 项 mock-WebSocket 握手集成） |
 | `npm run test:e2e` | Playwright E2E | 待试金补充用例 |
 | `npx --no-install tsc --noEmit`（在 `packages/shared/`） | 共享包类型检查 | **已验证**（2026-11-03 新树复跑，exit 0） |
@@ -37,7 +38,8 @@ npm install          # 新树尚未安装过依赖（2026-11-03 核实）
 
 ```
 web/
-├── app/                        # Next.js App Router（官网 + 客户端）
+├── app/                        # Next.js App Router（仅 Web 客户端）
+│   ├── page.tsx                # `/`：meta refresh 重定向到 /client
 │   └── client/                 # /client 连接页 · /client/chat 工作区
 │                               # · /client/bots 管理台（含 new、edit?bot=<id>）
 │                               # · /client/search · /client/settings
@@ -54,10 +56,12 @@ web/
 ├── packages/shared/            # @codync/shared：实体类型 + API 契约 + /channel 线类型
 ├── docs/                       # 本文档目录
 ├── test/                       # 测试基建（试金）
-├── vitest.config.ts            # 单测配置
-├── content/                    # 上游用户手册（Mdx）
-└── scripts/                    # 站点脚本（含 check-docs.mjs）
+└── vitest.config.ts            # 单测配置（全局 testTimeout 15s，17de461）
 ```
+
+> 营销官网（docs/download/compare 等路由、`content/` MDX 手册、
+> `scripts/check-docs.mjs`）已于 2026-11-04 整体移除（`ce3c6d5`），
+> 站点现在只包含 Web 客户端。
 
 关键源码参考（均在仓库内，v2.38.0）：
 
