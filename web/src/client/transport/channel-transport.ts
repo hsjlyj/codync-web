@@ -243,6 +243,9 @@ export class ChannelTransport implements HostTransport {
       sig: b64urlEncode(sig),
     }
     if (this.options.pair) hello.pair = true
+    // 握手状态供 acceptWelcome 复原 transcript（缺失会在收到 welcome 时以
+    // protocolError「握手状态丢失」收线——新刃审查抓出的 [BLOCK]）。
+    this.lastHello = { ek: hello.ek, n: hello.n }
     this.handshakeTimer = setTimeout(() => this.onClose(0, '握手超时'), HANDSHAKE_TIMEOUT_MS)
     this.ws?.send(JSON.stringify(hello))
     this.setStatus('handshaking')
@@ -353,7 +356,6 @@ export class ChannelTransport implements HostTransport {
       return this.onClose(close, reject.message)
     }
     if (v.t === 'welcome') {
-      this.lastHello = this.lastHello ?? null
       return this.acceptWelcome(text)
     }
     if (!this.opener) return this.onClose(CHANNEL_CLOSE_CODES.protocolError, '未握手就收到帧')
