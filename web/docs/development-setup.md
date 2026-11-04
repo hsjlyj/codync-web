@@ -29,7 +29,7 @@ npm install          # 新树尚未安装过依赖（2026-11-03 核实）
 | `npm run lint` | ESLint | 希音报 0 错 0 警（`29743ed`），本环境未复跑 |
 | `npm run format:check` | Prettier 检查 | 未验证 |
 | `npm run check:docs` | 站点文档检查（`scripts/check-docs.mjs`） | 未验证 |
-| `npm test` / `npm run test:watch` | Vitest 单测 | **已验证**（2026-11-04 榫卯复跑于 `1ff4bd7`：**44/44**，7 个文件，含 7 项官方向量逐字节回归） |
+| `npm test` / `npm run test:watch` | Vitest 单测 | **已验证**（2026-11-04 榫卯复跑于 `67b8784`：**50/50**，8 个文件，含 7 项官方向量逐字节回归） |
 | `npm run test:e2e` | Playwright E2E | 待试金补充用例 |
 | `npx --no-install tsc --noEmit`（在 `packages/shared/`） | 共享包类型检查 | **已验证**（2026-11-03 新树复跑，exit 0） |
 
@@ -76,6 +76,9 @@ web/
 
 ## 6. 已知坑
 
+- **偶发测试失败**：`src/client/transport/bytes.test.ts` 的「100MB 边界
+  roundtrip」用例较重（实测 ~4.3s），曾观察到偶发失败、重跑即过（疑 jsdom
+  内存压力）。复现请整跑 `npm test`（2026-11-04 观察，已反馈试金）。
 - **废弃树**：`/tmp/Codync-2.38.0/`、`/workspace/Codync-2.38.0/`、`/workspace/web/`
   已废弃（ADR-001 工作区约定），其中残留的 `relay/`/`bridge/` 代码勿参考。
 - **共享树纪律**：动别人有未提交改动的文件前先在群里说明；提交只 stage

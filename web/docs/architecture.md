@@ -89,12 +89,12 @@
 （详见仓库根 AGENTS.md「Cross-platform UI changes」）。Web 端作为新客户端，
 功能对齐以桌面端为准；平台专属能力（托盘、本地语音引擎、屏幕控制）不进 Web 端。
 
-## 6. 配对约束（主机 2.38.0 现状，影响真实主机连接）
+## 6. 配对约束（主机现状，2026-11-04 更新）
 
 | 约束 | 依据 | 现状与对策 |
 |------|------|-----------|
-| 配对平台白名单只有 `ios\|macos\|android`，`web` 会被 400 拒 | `host/src/remote/channel/pairing.rs`（`platform` match） | Web 端暂以 `macos` 登记（连接页已注明）；待主机侧白名单加 `web` |
-| 配对要求云签发的设备证书，缺失 → `Refusal::Missing` → `RejectCode::UnsupportedVersion` → close 4400 | `host/src/remote/certificate.rs`（`check()`）、`channel/pairing.rs:83` | 主机需开启云且已登录；Web 的云登录证书流程属 Phase 2，连接页留有证书 JSON 粘贴栏可对云开启的主机实测 |
+| 配对平台白名单（原只收 `ios\|macos\|android`，`web` 被 400 拒） | `host/src/remote/channel/pairing.rs:35` | **已放行 `web`**（`f028e75`，additive：`platform` 仅用于 analytics 与设备列表显示，不影响 `let_in` scopes）。客户端按 `platform: web` 登记（`fc4ad0f`），对未升级主机自动回退报 `macos` 一次（仅登记显示，不提权）；白名单改动属主机 shipped code，须随版本 bump 发布 |
+| 配对要求云签发的设备证书，缺失 → `Refusal::Missing` → `RejectCode::UnsupportedVersion` → close 4400 | `host/src/remote/certificate.rs`（`check()`）、`channel/pairing.rs:83` | 正式链路（云登录 → 云签发证书 → `pair`）属 Phase 2；连接页留有证书 JSON 粘贴栏。无云/私有部署可用 `CODYNC_DEVICE_CERT_KEY` 自签证书（`certificate.rs:41-45`），见 [ADR-001 后果节](adr/001-channel-e2e.md) |
 
 ## 7. 阶段规划（摘要，详见 CLIENT_DEV_PLAN.md）
 
