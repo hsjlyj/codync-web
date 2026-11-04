@@ -77,3 +77,20 @@ codync-host (Rust)
 - 正面：无中间层，攻击面为零；权限天然由主机控制；上层代码高复用
 - 代价：浏览器端需实现握手 + 加密帧（约 500-800 行 TS，3-5 天，有官方向量和手机端参考实现）
 - 风险：老浏览器不支持 X25519/Ed25519 时需降级提示（Chrome 133+/Safari 17+ 可用）
+
+### 主机侧配对约束（2026-11-04 架构评审补充，证据经逐行核实）
+
+1. **平台白名单**：`host/src/remote/channel/pairing.rs:35` 原只接受
+   `ios|macos|android`，Web 报 `web` 会被 400 拒。已加 `"web"`（additive，
+   `platform` 仅用于 analytics 和设备列表显示，不影响 `let_in` 的
+   scopes，pairing.rs:116 固定 `[Control, Screen]`）。
+   - 该改动属主机 shipped code，须随版本 bump 发布（仓库 AGENTS.md 规则）
+   - **Web 客户端须声明 `minHost`**：低于该版本的主机不认识 `web`，
+     客户端在 400 时回退报 `macos`（仅影响显示，不提权）
+2. **云签发设备证书强制**：`pairing.rs:81-88` → `certificate.rs:69-74`，
+   2.38.0 起 `pair` 必须携带云签发的 `{payload, sig}` 设备证书，
+   缺失 → `Refusal::Missing` → `RejectCode::UnsupportedVersion` → close **4400**
+   （devices.rs:135）。
+   - 正式 Web 配对链路 = 云账号登录 → 云签发证书 → `pair`，属 Phase 2
+   - 无云 / 私有部署场景：用 `CODYNC_DEVICE_CERT_KEY` 自签证书
+     （certificate.rs:41-45），测试可复用 `test_certificate` 向量
