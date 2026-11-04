@@ -56,3 +56,33 @@
 - `[SUGGESTION]` 建议改
 
 **评审流程**：创建 pending review → 行级评论 → 提交 review。不要批准自己提交的 PR。
+
+---
+
+## 审查记录
+
+### Phase 2 审查 — `92a9e03..d9f34df`（9 提交，2026-11-04）
+
+**结论：通过，无 [BLOCK]**。tsc 0 错、vitest 73/73、next build 成功、eslint 0 警告（复核人：新刃）。
+
+| 清单项 | 结果 | 证据 |
+|--------|------|------|
+| 架构一致性 | ✅ | 全部经 `ChannelTransport` 走 `/channel`；仅 import `@codync/shared` 类型；无 Bearer Token；无主机 HTTP 直连 |
+| 安全性 | ✅ | device key 三档存储（WebCrypto non-extractable 优先），`grep localStorage` 在 src/app 下零命中；settings 页只展示密钥形态不展示密钥本身 |
+| 类型契约 | ✅ | `BotDraft`/`Artifact`/`LibraryItem` 全部来自 `@codync/shared`；`grep "as any\|: any"` 在非测试源码零命中 |
+| 删除事件收窄 | ✅ | `92a9e03` 按 `hub.rs:294` 只认 `{id, deleted:true}`，不进 upsert，有专属测试 |
+| 方法名事实 | ✅ | `deleteBot({botId})`、`reorderBots({ids})`、`updateBot` 带 `id`、`renameSection({from,to})`，与砚台 `06c8e3c` 核实一致 |
+| 静态导出约束 | ✅ | 编辑页用 `?bot=<id>` 查询参数，无 `[id]` 动态路由段 |
+| 文件大小 | ⚠️ [SUGGESTION] | `app-model.ts` 已达 540 行（超 500 行约定）；本轮只新增 11 行，建议 Phase 3 拆分时把事件处理/连接管理拆出 |
+| 日志泄露 | ✅ | 非测试源码无 `console.log/debug/info` |
+| 测试覆盖 | ✅ | 新增 4 个测试文件（bot-admin 10 例 / library 3 例 / search 7 例 / roster-groups 4 例），累计 73/73 |
+
+### Phase 0+1 审查 — `4a2f6ef` / `8b9bedc` / `29743ed` / `3f6a918..1ff4bd7`（2026-11-03）
+
+**结论：通过，无 [BLOCK]**。官方向量 7 项逐字节回归通过；`ChannelFrame` base64url 无填充标注正确；close code 双常量（`REJECT_CLOSE_CODES`/`CHANNEL_CLOSE_CODES`）建模完整。
+
+### 待关注（非阻塞）
+
+- `bytes.test.ts` chunk 边界 roundtrip 偶发超时（jsdom GC 抖动），试金已建议 `testTimeout: 15000`
+- 真实主机 E2E 联调待 Phase 3（需 cargo 编译 host + 云证书）
+- Playwright 冒烟三条建议补：演示模式发消息 / bots/new 提交 / settings 断开
