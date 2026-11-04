@@ -76,9 +76,11 @@ web/
 
 ## 6. 已知坑
 
-- **偶发测试失败**：`src/client/transport/bytes.test.ts` 的「100MB 边界
-  roundtrip」用例较重（实测 ~4.3s），曾观察到偶发失败、重跑即过（疑 jsdom
-  内存压力）。复现请整跑 `npm test`（2026-11-04 观察，已反馈试金）。
+- **偶发测试失败**：`src/client/transport/bytes.test.ts` 的「chunk 边界
+  roundtrip」用例较重（实测 ~4.5s；用例本身只遍历到 `UPLOAD_CHUNK + 1`，
+  不构造 100MB 数据——试金核实）。曾观察到一次偶发失败、重跑即过
+  （疑超时/GC 抖动）。稳定性豁免（`testTimeout`、CI 策略）由试金跟进；
+  复现请整跑 `npm test`。
 - **废弃树**：`/tmp/Codync-2.38.0/`、`/workspace/Codync-2.38.0/`、`/workspace/web/`
   已废弃（ADR-001 工作区约定），其中残留的 `relay/`/`bridge/` 代码勿参考。
 - **共享树纪律**：动别人有未提交改动的文件前先在群里说明；提交只 stage
