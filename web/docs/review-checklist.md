@@ -138,3 +138,32 @@
 | 委托语义一致 | ✅ | `changed()` 快照通知语义原样保留；删除事件收窄逻辑在 bot-state 内原样搬移 |
 | vitest 不误收 e2e | ✅ | `03a87a1` 给 vitest.config.ts 加 `exclude: [..., 'e2e/**', 'playwright-report/**']`，Playwright 归 Playwright |
 | [SUGGESTION] | 🟡 | `real-host.ts` 用 `import type { AppModel }` 打破环是安全做法；若未来需要运行时引用，应改为窄接口注入而非直接 import 类 |
+
+---
+
+## Phase 3 审查口径（2026-11-04 起生效，待产出逐条核对）
+
+Phase 3 引入三类浏览器重资源，**资源清理是 [BLOCK] 级检查项**：
+
+### 8. 终端（xterm.js）
+- [ ] `Terminal.dispose()` 在组件 unmount 时调用（useEffect cleanup）
+- [ ] term 订阅取消（`{"id","cancel":true}`）在关闭面板时发出，流 `end` 后清理
+- [ ] base64 输出 decode 后写入，超大输出是否截断（xterm buffer 上限）
+- [ ] `termInput`/`termResize` 防抖，避免每 keystroke 一帧
+
+### 9. 屏幕共享（WebRTC）
+- [ ] `RTCPeerConnection.close()` 在离开会话/出错时调用，`ontrack` 引用解除
+- [ ] ICE 候选订阅（`screenCandidates`）结束后取消；viewer 上限 32/4/60s 由主机兜底，客户端重复点击要防抖
+- [ ] `screenOffer` 传裸 SDP 字符串（砚台 dbcf53d 核实），不是 RTCSessionDescription 对象
+- [ ] video 元素 srcObject 置 null 释放
+
+### 10. 语音（Web Speech API / 临时凭据）
+- [ ] `SpeechRecognition.stop()` + `onend` 后清 handler，组件卸载不留活 recognition
+- [ ] `voiceSession` 临时 credential 不写入持久化存储、不进日志
+- [ ] 音频 MediaStream track 全部 `stop()` 后再释放
+
+### 通用
+- [ ] 每个 Phase 3 新文件 <500 行（mock-transport.ts 已 519 行，加功能前先拆——若光已提醒希音）
+- [ ] 无新的 `any`、无 console 泄露（含 credential）
+- [ ] 新功能有单测；协议行为以砚台 dbcf53d 类型为准
+- [ ] 无新的 [BLOCK]：尤其资源泄漏、凭据落盘、订阅不取消
