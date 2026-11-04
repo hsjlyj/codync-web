@@ -14,6 +14,8 @@
 | [ADR-001：/channel E2E 直连](adr/001-channel-e2e.md) | 全员 | 已采纳（岚序落盘） |
 | [通道向量映射](channel-vectors-mapping.md) | 开发者 | 现行（砚台：12 组官方向量 ↔ 线字段对照） |
 | [代码审查清单](review-checklist.md) | 审查 | 现行（新刃维护：`[BLOCK]`/`[SUGGESTION]` 规则） |
+| [Phase 2 功能清单](phase2-features.md) | 开发者 | 现行（榫卯：功能状态 + Given/When/Then 验收 + 事实基线） |
+| [Phase 2 用户故事](phase2-user-stories.md) | 产品 | 现行（风落：6 个故事 + 验收清单） |
 | [贡献指南](contributing.md) | 全员 | 现行 |
 | [使用指南](user-guide.md) | 用户 | 草稿（Phase 1 目标行为） |
 | [首次连接教程](first-connection.md) | 用户 | 草稿（Phase 1 目标行为） |

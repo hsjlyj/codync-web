@@ -100,5 +100,14 @@
 
 - **Phase 0**：脚手架 + ADR-001 决策 + 架构评审（已完成，`29743ed`）
 - **Phase 1**：远程连接、Bot 列表、消息收发、历史、文件上传、配对认证（已入库 `3f6a918..1ff4bd7`，真实主机联调待做）
-- **Phase 2**：Bot CRUD、设置、用量统计、Artifact、Marketplace
+- **Phase 2**：Bot CRUD、设置、用量统计、Artifact、Marketplace（**进行中**——
+  需求见 [phase2-user-stories.md](phase2-user-stories.md) 与
+  [phase2-features.md](phase2-features.md)；规划新增模块（未实现，路径以实现为准）：
+
+  ```
+  web/src/client/views/bots/       # Bot 表单（新建/编辑）与列表操作
+  web/src/client/views/settings/   # 设置面板
+  web/src/client/views/search/     # 搜索面板（本地过滤，跨历史搜索待主机 API，未决）
+  ```
+  ）
 - **Phase 3**：终端、语音、网络管理、屏幕查看、PWA
