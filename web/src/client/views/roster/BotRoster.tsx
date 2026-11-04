@@ -43,7 +43,10 @@ export function BotRoster({
               <span className="block truncate font-medium">{bot.name}</span>
               <span className="block truncate text-xs text-neutral-500">{bot.backend}</span>
             </span>
-            <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[bot.status] ?? 'bg-neutral-600'}`} aria-label={bot.status} />
+            <span
+              className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[bot.status] ?? 'bg-neutral-600'}`}
+              aria-label={bot.status}
+            />
           </button>
         </li>
       ))}
