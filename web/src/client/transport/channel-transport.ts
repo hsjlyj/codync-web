@@ -489,7 +489,7 @@ const backoffMs = (retries: number, slow: boolean) => {
   return slow ? base * 2 + jitter : base + jitter
 }
 
-/** `/events?since=5&client=web` → events 订阅；`/term/abc` → term 订阅。 */
+/** `/events?since=5&client=web` → events 订阅；`/term/abc` → term 订阅；`/screen-candidates?session=` → ICE 订阅。 */
 export function parseStreamPath(path: string, clientName?: string): { sub: string; b?: unknown } {
   const url = new URL(path, 'https://channel.invalid')
   if (url.pathname === '/events')
@@ -501,6 +501,8 @@ export function parseStreamPath(path: string, clientName?: string): { sub: strin
       },
     }
   if (url.pathname.startsWith('/term/')) return { sub: 'term', b: { term: url.pathname.slice('/term/'.length) } }
+  if (url.pathname === '/screen-candidates')
+    return { sub: 'screenCandidates', b: { session: url.searchParams.get('session') ?? '' } }
   throw new Error(`未支持的流路径：${path}`)
 }
 

@@ -9,7 +9,6 @@ import type {
   Attachment,
   Bot,
   BotDraft,
-  DirListing,
   Entry,
   Hello,
   HostEvent,
@@ -382,6 +381,10 @@ export class MockTransport implements HostTransport {
       case 'termInput':
       case 'termResize':
       case 'termClose':
+      case 'screenPrepare':
+      case 'screenOffer':
+      case 'screenCandidate':
+      case 'screenClose':
         return this.remote.call<T>(method, b)
       default:
         throw new HostError(404, `演示模式未实现方法：${method}`)
@@ -431,6 +434,7 @@ export class MockTransport implements HostTransport {
       }
     }
     if (path.startsWith('/term/')) return this.remote.termStream(path, onData, onEnd)
+    if (path.startsWith('/screen-candidates')) return this.remote.screenStream(path, onData, onEnd)
     onEnd(new HostError(404, `演示模式未实现流：${path}`))
     return () => {}
   }
