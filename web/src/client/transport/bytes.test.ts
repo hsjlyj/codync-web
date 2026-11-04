@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { byteCount, chunkRanges, fromBase64, toBase64, UPLOAD_CHUNK } from './bytes'
 
 describe('toBase64 / fromBase64', () => {
-  // 384KB 边界 roundtrip 本体 <100ms；全局 testTimeout=15s（vitest.config.ts）为并行满负载
-  // 时的 jsdom 环境抖动兜底——本用例正是曾经的偶发超时点（试金/榫卯各复现一次）。
-  it('roundtrips bytes of every size around the chunk boundary', () => {
+  // 384KB 边界 roundtrip 本体 <100ms；显式超时 15s 兜底 jsdom 并行负载抖动
+  // 本用例曾偶发超时（试金/榫卯复现），见 development-setup.md 已知坑
+  it('roundtrips bytes of every size around the chunk boundary', { timeout: 15000 }, () => {
     for (const size of [0, 1, 2, 3, 76, 1024, UPLOAD_CHUNK, UPLOAD_CHUNK + 1]) {
       const bytes = new Uint8Array(size)
       for (let i = 0; i < size; i++) bytes[i] = (i * 7 + 13) % 256
