@@ -9,7 +9,6 @@
     "lint": "eslint",
     "format": "prettier --write \"app/**/*.{ts,tsx,css}\" \"src/**/*.{ts,tsx}\"",
     "format:check": "prettier --check \"app/**/*.{ts,tsx,css}\" \"src/**/*.{ts,tsx}\"",
-    "check:docs": "node scripts/check-docs.mjs",
     "test": "vitest run",
     "test:watch": "vitest watch",
     "test:e2e": "playwright test",
