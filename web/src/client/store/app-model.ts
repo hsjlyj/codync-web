@@ -13,7 +13,7 @@ import { normalizeBot, quoteOf } from '@codync/shared'
 import { MAX_FILE_SIZE, UPLOAD_CHUNK, chunkRanges, fromBase64, toBase64 } from '../transport/bytes'
 import { ChannelTransport } from '../transport/channel-transport'
 import { clearDevice, createDeviceSigner, loadDeviceSigner, saveDeviceMeta } from '../transport/device-key'
-import type { HostTransport, TransportStatus } from '../transport/host-transport'
+import { HostError, type HostTransport, type TransportStatus } from '../transport/host-transport'
 import { normalizeChannelUrl, parsePairingUrl } from '../transport/pairing-url'
 
 export type ConnectionState = TransportStatus
@@ -147,30 +147,43 @@ export class AppModel {
     const alreadyPaired = !!device && device.computerId === computerId
     if (pairCode && !alreadyPaired) {
       stage('正在配对…（请在主机上确认）')
-      const pairTransport = new ChannelTransport({
-        url,
-        computerId,
-        hostSignKey: signKey,
-        signer,
-        clientName: 'web',
-        pair: {
-          code: pairCode,
-          name: params.deviceName?.trim() || 'Codync Web',
-          platform: params.platform ?? 'macos',
-          ...(params.certificate ? { certificate: params.certificate } : {}),
-        },
-      })
-      try {
-        pairTransport.connect()
-        const reply = await pairTransport.pairOutcome()
-        await saveDeviceMeta({
-          computerId: reply.computerId,
-          deviceName: params.deviceName?.trim() || 'Codync Web',
-          signPubB64: signer.signPubB64,
-          createdAt: Date.now(),
+      // 平台按 web 登记（主机白名单已加 web，pairing.rs:35）；老主机只认 ios/macos/android，
+      // 平台校验在配对码核销之前（pairing.rs:34-39），被 400 拒后按 macos 过渡重试一次是安全的。
+      const pairOnce = async (platform: string) => {
+        const pairTransport = new ChannelTransport({
+          url,
+          computerId,
+          hostSignKey: signKey,
+          signer,
+          clientName: 'web',
+          pair: {
+            code: pairCode,
+            name: params.deviceName?.trim() || 'Codync Web',
+            platform,
+            ...(params.certificate ? { certificate: params.certificate } : {}),
+          },
         })
-      } finally {
-        pairTransport.disconnect()
+        try {
+          const reply = await pairTransport.pairOutcome()
+          await saveDeviceMeta({
+            computerId: reply.computerId,
+            deviceName: params.deviceName?.trim() || 'Codync Web',
+            signPubB64: signer.signPubB64,
+            createdAt: Date.now(),
+          })
+        } finally {
+          pairTransport.disconnect()
+        }
+      }
+      try {
+        await pairOnce(params.platform ?? 'web')
+      } catch (e) {
+        if (e instanceof HostError && e.status === 400 && /platform/i.test(e.message)) {
+          stage('主机版本较旧，暂按 macos 平台登记…')
+          await pairOnce('macos')
+        } else {
+          throw e
+        }
       }
     }
 

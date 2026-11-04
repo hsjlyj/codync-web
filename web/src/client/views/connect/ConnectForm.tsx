@@ -184,7 +184,7 @@ export function ConnectForm() {
               maxLength={100}
             />
           </Field>
-          <Field label="设备证书（可选 JSON；主机 2.38 配对要求云签发的 {payload, sig}，缺省会被 4400 拒绝）">
+          <Field label="设备证书（可选 JSON；主机 2.38 配对要求云签发的 {payload, sig}，缺省会被 4400 拒绝；自托管可用 CODYNC_DEVICE_CERT_KEY 自签）">
             <textarea
               value={certificateText}
               onChange={(e) => setCertificateText(e.target.value)}
@@ -194,8 +194,8 @@ export function ConnectForm() {
             />
           </Field>
           <p className="text-[11px] leading-relaxed text-neutral-600">
-            平台按 macos 白名单登记（主机 pairing.rs:35 暂只接受 ios/macos/android，web 白名单待主机加入）。
-            设备密钥生成后以 non-extractable 形式存 IndexedDB；不支持 Ed25519 的浏览器回退为 AES-GCM 包裹存储。
+            平台按 web 登记（主机已支持；较旧主机会自动回退按 macos 过渡一次）。设备密钥生成后以 non-extractable 形式存
+            IndexedDB；不支持 Ed25519 的浏览器回退为 AES-GCM 包裹存储。
           </p>
         </div>
       )}
