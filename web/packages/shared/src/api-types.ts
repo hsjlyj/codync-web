@@ -12,7 +12,7 @@
  * 403 loopback-only method, 404 unknown method, 409 conflict, 413 too large.
  */
 
-import type { Bot, Entry, Hello, ScreenState, Usage, CustomIcons } from './models'
+import type { Artifact, Attachment, Bot, Entry, Hello, ScreenState, Usage, CustomIcons } from './models'
 
 /** The JSON body of a failed call. */
 export interface ApiErrorBody {
@@ -50,7 +50,7 @@ export interface EntryEvent {
 export interface ArtifactEvent {
   type: 'artifact'
   rev: number
-  artifact: { id: string; botId: string; title: string; path: string; updatedAt: number; [k: string]: unknown }
+  artifact: Artifact
 }
 
 export interface IconsEvent {
@@ -187,7 +187,7 @@ export function deviceMayCall(method: string, scopes: Scope[]): boolean {
 
 // ---- Core method signatures (the Phase 1 chat MVP set) ----
 
-import type { Attachment, Backend, BotDraft, DirListing, PairingInfo, AuthorizedDevice } from './models'
+import type { Backend, BotDraft, DirListing, PairingInfo, AuthorizedDevice } from './models'
 
 /** A `POST /api/<method>` call: body in, JSON answer out. */
 export type ApiCaller = <B = unknown, R = unknown>(method: string, body?: B) => Promise<R>
@@ -220,7 +220,10 @@ export interface CoreApiCalls {
   readUpload(b: { botId: string; uploadId: string; offset?: number }): Promise<{ data: string; size: number }>
   readFile(b: { entryId: string; fileId: string; offset: number }): Promise<{ data: string; size: number }>
   createBot(b: BotDraft): Promise<{ bot: Bot }>
+  /** `id` is required for an update (hub.rs:251). Section/pinned/hidden ride on the same
+   *  patch — there are no setBotSection/setBotPinned/setBotHidden methods. */
   updateBot(b: BotDraft): Promise<{ bot: Bot }>
+  /** Roster removal is event-driven: the host emits a bot event with `deleted: true` (hub.rs). */
   deleteBot(b: { botId: string }): Promise<Record<string, never>>
   reorderBots(b: { ids: string[] }): Promise<Record<string, never>>
   renameSection(b: { from: string; to?: string | null }): Promise<Record<string, never>>
@@ -232,6 +235,11 @@ export interface CoreApiCalls {
   react(b: { entryId: string; emoji: string }): Promise<{ entry: Entry }>
   /** The host derives the bot from the entry's author — do NOT send `botId` (api/bots.rs:270). */
   respondPermission(b: { entryId: string; optionId?: string | null }): Promise<Record<string, never>>
+  /** The bot's library: artifacts plus file-message attachments, newest first. No host
+   *  `search` method exists — searching filters loaded entries client-side. */
+  library(b: { botId: string }): Promise<{ items: LibraryItem[] }>
+  readArtifact(b: { botId: string; artifactId: string; offset: number }): Promise<{ data: string; size: number; artifact: Artifact }>
+  renameArtifact(b: { botId: string; artifactId: string; title: string }): Promise<{ artifact: Artifact }>
   listDirs(b: { path?: string }): Promise<DirListing>
   selectWorkspace(b: { path: string }): Promise<{ path: string }>
   usage(b: { refresh?: boolean }): Promise<Usage>
@@ -274,6 +282,11 @@ export interface PairReply {
   /** The signed claim, when the request carried one and the computer joined the account. */
   claim?: unknown | null
 }
+
+/** One `library` item: an artifact record, or a file message's attachment. */
+export type LibraryItem =
+  | { kind: 'artifact'; at: number; artifact: Artifact }
+  | { kind: 'attachment' | 'file'; at: number; entryId: string; file: Attachment }
 
 // ---- Sync model ----
 

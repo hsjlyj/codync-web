@@ -73,10 +73,10 @@
 | 方法 | 请求 | 应答 |
 |------|------|------|
 | `hello` | `{}` | `Hello`（含 `joinAccount`） |
-| `refreshBackends` | `{}` | `{backends}` |
-| `usage` | `{refresh?}` | `Usage` |
-| `listDirs` | `{path?}` | `DirListing`（含 recent） |
-| `selectWorkspace` | `{path}` | `{path}`（校验可读并记忆） |
+| `refreshBackends` **P2** | `{}` | `{backends}` |
+| `usage` **P2** | `{refresh?}` | `Usage` |
+| `listDirs` **P2** | `{path?}` | `DirListing`（含 recent） |
+| `selectWorkspace` **P2** | `{path}` | `{path}`（校验可读并记忆） |
 | `agentSetup` | `{backend, step(install\|login\|node), method?, cols?, rows?}` | `{term: id}` |
 | `agentModels` | `{backend}` | 该 agent 可用模型 |
 | `agentAuth` | `{backend}` | `{signedIn, …}` |
@@ -124,8 +124,8 @@
 | `createBot` **P1** | `BotDraft` | `{bot}` |
 | `updateBot` **P1** | `BotDraft` | `{bot}` |
 | `deleteBot` **P1** | `{botId}` | `{}` |
-| `reorderBots` | `{ids[]}` | `{}` |
-| `renameSection` | `{from, to?(缺失即错，null/空名=移除)}` | `{}` |
+| `reorderBots` **P2** | `{ids[]}` | `{}` |
+| `renameSection` **P2** | `{from, to?(缺失即错，null/空名=移除)}` | `{}` |
 | `setLead` | `{botId}` | `{}` |
 | `markRead` | `{botId}` | `{}` |
 | `stop` | `{botId}` | `{}`（组停止全部成员） |
@@ -134,8 +134,8 @@
 | `react` | `{entryId, emoji}` | `{entry}` |
 | `respondPermission` **P1** | `{entryId, optionId?}` | `{}` |
 | `memory` / `memoryFile` | `{botId, …}` | 记忆内容/文件 |
-| `library` | `{botId}` | artifact 列表 |
-| `readArtifact` / `renameArtifact` | `{botId, id…}` | 内容/确认 |
+| `library` **P2** | `{botId}` | artifact 列表 |
+| `readArtifact` / `renameArtifact` **P2** | `{botId, id…}` | 内容/确认 |
 | `editHandoff` / `keepConversation` | `{botId, …}` | 交接卡操作 |
 | `routines` | `{botId}` | 例程列表 |
 | `saveRoutine` | `{botId, …}` | 保存 |
@@ -202,6 +202,8 @@ Composio：`composioCall` 🔒 · `composioStatus` · `setComposioKey` · `compo
 ### 4.6 图标（3，mod.rs 直派）
 
 `setIcon`（≤8MB）· `icons` → `{icons, iconsRevision}` · `readFile`（见 4.2）。
+
+> **Phase 2 方法核实（2026-11-04，砚台）**：主机**没有** `setBotPosition` / `setBotSection` / `setBotPinned` / `setBotHidden` / `search` / 独立 `backends` 方法——拖拽排序用 `reorderBots({ids})`；section/pinned/hidden 走 `updateBot` 补丁（`id` 必填，hub.rs:251）；搜索在客户端过滤已加载条目；后端列表来自 `hello` 与 `refreshBackends`。`deleteBot` 收 `{botId}`（非 `{id}`），删除经 `deleted:true` 的 bot 事件反映到花名册。
 
 ## 5. 权限边界（ADR-001：Web 客户端走 `/channel`，`Caller::Device`）
 

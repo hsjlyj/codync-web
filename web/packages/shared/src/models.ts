@@ -722,3 +722,18 @@ export interface GroupDraft {
   members: string[]
   pinned?: boolean
 }
+
+/** A published artifact's full record (library / readArtifact; chat cards carry the ArtifactCard subset). */
+export interface Artifact {
+  id: string
+  botId: string
+  title: string
+  size: number
+  sha256: string
+  createdAt: number
+  updatedAt: number
+  /** Its newest card in the bot's chat: what a message about the artifact replies to. */
+  entryId?: string
+  /** The sync rev of its last change, so catch-up brings changes it missed. */
+  rev: number
+}
