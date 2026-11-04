@@ -174,6 +174,10 @@ export function ConnectForm() {
                   placeholder="主机上生成"
                 />
               </Field>
+              <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-300" role="note">
+                手工方式没有主机签名公钥（sk）——welcome 签名校验会被跳过，理论上有中间人风险；建议尽量用配对链接（自带
+                sk）。
+              </p>
             </div>
           )}
           <Field label="设备名称（显示在主机的审批提示里）">
