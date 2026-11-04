@@ -35,8 +35,8 @@
 > 作为用户，我想修改现有 Bot 的配置并保存更改。
 
 **Acceptance Criteria**:
-- [ ] 访问 `/client/bots/[id]/edit` 路由打开编辑表单，预填当前 Bot 的所有字段
-- [ ] 所有字段可编辑，修改后保存调用 `updateBot` channel 方法
+- [ ] 访问 `/client/bots/edit?bot=<id>` 路由（查询参数形式，兼容静态导出）打开编辑表单，预填当前 Bot 的所有字段
+- [ ] 所有字段可编辑，修改后保存调用 `updateBot` channel 方法（`id` 必填，源自 hub.rs:251）
 - [ ] 保存成功后表单关闭，Bot 列表中的对应条目更新显示新值
 - [ ] 取消编辑可放弃修改，返回 Bot 列表而不保存
 - [ ] 字段级别验证：name 非空、model 在有效选项范围内
