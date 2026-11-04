@@ -105,4 +105,8 @@
 - **Phase 1**：远程连接、Bot 列表、消息收发、历史、文件上传、配对认证（已入库 `3f6a918..1ff4bd7`，真实主机联调待做）
 - **Phase 2**：Bot CRUD、分组、设置、用量、Artifact 下载、本地搜索（已入库
   `92a9e03..d9f34df`；未做：Marketplace 页、library 独立浏览页、跨全量历史搜索）
-- **Phase 3**：终端、语音、网络管理、屏幕查看、PWA
+- **Phase 3**：终端模拟器、语音输入、屏幕查看、网络查看（**实现中**——
+  需求与协议事实基线见 [phase3-features.md](phase3-features.md)；规划组件
+  （CLIENT_DEV_PLAN 命名，路径以实现为准）：TerminalView、DictationEngine
+  适配、ScreenShare 查看器。关键协议约束：屏幕信令必须先开
+  `screenCandidates` 订阅再发 `screenOffer`（signaling.rs:134））

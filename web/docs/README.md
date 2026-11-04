@@ -16,6 +16,7 @@
 | [代码审查清单](review-checklist.md) | 审查 | 现行（新刃维护：`[BLOCK]`/`[SUGGESTION]` 规则） |
 | [Phase 2 功能清单](phase2-features.md) | 开发者 | 现行（榫卯：功能状态 + Given/When/Then 验收 + 事实基线） |
 | [Phase 2 用户故事](phase2-user-stories.md) | 产品 | 现行（风落：6 个故事 + 验收清单） |
+| [Phase 3 功能清单](phase3-features.md) | 开发者 | 现行（实现中；协议事实基线 + 验收标准 + 已知限制） |
 | [主机集成清单](host-integration-checklist.md) | 开发者 | 现行（渡口：Phase 2 方法 channel 封套示例） |
 | [贡献指南](contributing.md) | 全员 | 现行 |
 | [使用指南](user-guide.md) | 用户 | 草稿（Phase 1 目标行为） |
