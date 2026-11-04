@@ -29,7 +29,7 @@ npm install          # 新树尚未安装过依赖（2026-11-03 核实）
 | `npm run lint` | ESLint | 希音报 0 错 0 警（`29743ed`），本环境未复跑 |
 | `npm run format:check` | Prettier 检查 | 未验证 |
 | `npm run check:docs` | 站点文档检查（`scripts/check-docs.mjs`） | 未验证 |
-| `npm test` / `npm run test:watch` | Vitest 单测 | **已验证**（2026-11-04 榫卯复跑于 `1555d6f`：**95/95**，16 个文件，含 7 项官方向量逐字节回归 + 2 项 mock-WebSocket 握手集成；期间两次遇 bytes 用例超时偶发，见已知坑） |
+| `npm test` / `npm run test:watch` | Vitest 单测 | **已验证**（2026-11-04 榫卯复跑于 `17de461`：**95/95**，16 个文件，含 7 项官方向量逐字节回归 + 2 项 mock-WebSocket 握手集成） |
 | `npm run test:e2e` | Playwright E2E | 待试金补充用例 |
 | `npx --no-install tsc --noEmit`（在 `packages/shared/`） | 共享包类型检查 | **已验证**（2026-11-03 新树复跑，exit 0） |
 
@@ -79,11 +79,11 @@ web/
 
 ## 6. 已知坑
 
-- **偶发测试失败（根因已确认）**：`src/client/transport/bytes.test.ts` 的
-  chunk 边界 roundtrip 用例正常耗时 ~4.5s，默认 `testTimeout` 5000ms 贴线，
-  机器负载高即超时失败（2026-11-04 三次观察：两次整跑 94/95 与 72/73，
-  重跑均全绿；隔离跑 ~4.5s 通过）。修法（该用例显式 timeout ≥10s 或全局
-  调整）由试金跟进。
+- ~~偶发测试失败~~ **已修复**（`17de461`）：`bytes.test.ts` 的 chunk 边界
+  roundtrip 用例本体 <100ms，但 16 个 jsdom 文件并行时环境启动开销抖动，
+  会间歇撞上 5s 默认超时（2026-11-04 三次复现，榫卯/试金各中一次）。
+  修法：`vitest.config.ts` 全局 `testTimeout: 15s` + 用例注释记录 flake 历史；
+  连续三次全量 95/95 全绿。
 - **静态导出约束**：动态路由段（`[id]`）在 `output: export` 下不可用，
   参数走查询串（如 `/client/bots/edit?bot=<id>`、
   `/client/terminal?backend=<id>&step=…`）；文档与链接勿写 `[id]` 路径。
