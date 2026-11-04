@@ -4,12 +4,16 @@
  * 消息输入区（Phase 1）：文本 + 附件（选择/拖拽/粘贴）+ 回复引用预览 + 上传进度。
  * 文件字节不在此读：pickedFiles 只做元信息整理，上传由 AppModel.uploadFiles 完成。
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { Entry } from '@codync/shared'
 import { byteCount } from '../../transport/bytes'
 import { QuoteRow } from './message-bubbles'
 import { attachmentSymbol } from './attachment-list'
 import { pickedFiles, type PickedFile } from './composer-files'
+import { browserRecognizerFactory, createSpeechInput, speechSupported, type SpeechInput } from './speech-input'
+
+// 语音能力在会话内不会变化：无需真实订阅源（useSyncExternalStore 仅借其 SSR/CSR 双快照）。
+const subscribeNever = () => () => {}
 
 export function Composer({
   disabled,
@@ -37,6 +41,44 @@ export function Composer({
   const inputRef = useRef<HTMLInputElement>(null)
   const fieldRef = useRef<HTMLTextAreaElement>(null)
 
+  // 语音输入（Phase 3，浏览器本地 Web Speech API）：能力探测用 useSyncExternalStore
+  // （SSR 快照恒 false → 按钮水合后一致地隐藏/显示，且不触发 effect 级联渲染）。
+  const speechReady = useSyncExternalStore(subscribeNever, speechSupported, () => false)
+  const [listening, setListening] = useState(false)
+  const speechRef = useRef<SpeechInput | null>(null)
+  const speechBaseRef = useRef('')
+  const speechFinalRef = useRef('')
+  useEffect(() => speechRef.current?.stop(), [])
+
+  const toggleSpeech = () => {
+    if (listening) {
+      speechRef.current?.stop()
+      return
+    }
+    const factory = browserRecognizerFactory()
+    if (!factory) return
+    speechBaseRef.current = text
+    speechFinalRef.current = ''
+    speechRef.current = createSpeechInput(
+      factory,
+      {
+        onFinal: (chunk) => {
+          speechFinalRef.current += chunk
+          setText(speechBaseRef.current + speechFinalRef.current)
+        },
+        onInterim: (interim) => setText(speechBaseRef.current + speechFinalRef.current + interim),
+        onError: (message) => setError(message),
+        onEnd: () => {
+          speechRef.current = null
+          setListening(false)
+        },
+      },
+      typeof navigator !== 'undefined' ? navigator.language || 'zh-CN' : 'zh-CN',
+    )
+    speechRef.current.start()
+    setListening(true)
+  }
+
   // 选了回复对象：焦点进输入框（桌面端同行为）。
   useEffect(() => {
     if (reply) fieldRef.current?.focus()
@@ -58,6 +100,9 @@ export function Composer({
       const replyTo = reply?.id ?? null
       setFiles([])
       setText('')
+      // 发送后清空语音会话基线：后续转写从空输入追加，不叠回已发送文本。
+      speechBaseRef.current = ''
+      speechFinalRef.current = ''
       await onSend(trimmed || '（附件）', chosen, replyTo, (done, total) =>
         setUploadStage(total > 1 ? `上传中 ${done}/${total}` : done < total ? '上传中…' : null),
       )
@@ -178,6 +223,23 @@ export function Composer({
             dragOver ? 'border-emerald-500' : 'border-neutral-700'
           }`}
         />
+        {speechReady && (
+          <button
+            type="button"
+            onClick={toggleSpeech}
+            disabled={disabled}
+            aria-label={listening ? '停止语音输入' : '开始语音输入'}
+            aria-pressed={listening}
+            title={listening ? '停止语音输入' : '语音输入（浏览器本地识别）'}
+            className={`shrink-0 rounded-xl border px-3 py-2.5 text-sm disabled:opacity-40 ${
+              listening
+                ? 'animate-pulse border-red-500 bg-red-500/10 text-red-400'
+                : 'border-neutral-700 text-neutral-400 hover:border-neutral-500 hover:text-neutral-200'
+            }`}
+          >
+            🎤
+          </button>
+        )}
         <button
           type="button"
           onClick={() => void submit()}
@@ -187,13 +249,17 @@ export function Composer({
           {pending || uploadStage ? '发送中…' : '发送'}
         </button>
       </div>
+      {listening && (
+        <p className="mx-auto mt-2 max-w-3xl text-xs text-red-400" aria-live="polite">
+          语音识别中，请说话…（说完点麦克风停止）
+        </p>
+      )}
       {uploadStage && <p className="mx-auto mt-2 max-w-3xl text-xs text-neutral-400">{uploadStage}</p>}
       {error && (
         <p className="mx-auto mt-2 max-w-3xl text-xs text-red-400" role="alert">
           {error}
         </p>
       )}
-      <p className="mx-auto mt-1.5 max-w-3xl text-right text-[11px] text-neutral-600">语音输入（Phase 3）</p>
     </div>
   )
 }
