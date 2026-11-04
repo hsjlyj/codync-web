@@ -1,46 +1,21 @@
 import type { Metadata } from "next";
-import Hero from "./components/hero";
-import Film from "./components/film";
-import { Answers, Features } from "./components/features";
-import Fallbacks from "./components/fallbacks";
-import Computers from "./components/computers";
-import Surfaces from "./components/surfaces";
-import Privacy from "./components/privacy";
-import Compare from "./components/compare";
-import Cost from "./components/cost";
-import Questions from "./components/questions";
-import CompareCards from "./components/compare-cards";
-import Install from "./components/install";
-import Reveal from "./components/reveal";
-import { SiteFooter, SiteHeader } from "./components/site-chrome";
 
-export const metadata: Metadata = { alternates: { canonical: "/" } };
+export const metadata: Metadata = {
+  title: "Codync Web 客户端",
+  robots: { index: false, follow: false }
+};
 
+// 站点根路径直接进入 Web 客户端；静态导出（output: "export"）下
+// 用 meta refresh 立即跳转，并附兜底链接。
 export default function Home() {
   return (
     <>
-      <SiteHeader />
-      <main className="flex-1">
-        <Hero />
-        <Film />
-        <Answers />
-        <Features />
-        <Fallbacks />
-        <Computers />
-        <Surfaces />
-        <Privacy />
-        <Compare />
-        <Cost />
-        <Questions />
-        <section className="px-4 pb-20 sm:px-6 md:pb-28">
-          <Reveal className="mx-auto max-w-6xl">
-            <h2 className="mb-6 text-xl font-semibold text-neutral-50">Compare Codync</h2>
-            <CompareCards />
-          </Reveal>
-        </section>
-        <Install />
+      <meta httpEquiv="refresh" content="0; url=/client" />
+      <main className="flex min-h-screen flex-1 items-center justify-center bg-neutral-950">
+        <a href="/client" className="text-neutral-50 underline underline-offset-4">
+          正在进入 Web 客户端，若未自动跳转请点击这里
+        </a>
       </main>
-      <SiteFooter />
     </>
   );
 }
