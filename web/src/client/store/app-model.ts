@@ -239,6 +239,13 @@ export class AppModel {
         this.changed({ rev: event.rev, usage: (event.usage as Usage | undefined) ?? null })
         break
       case 'bot': {
+        // 主机删除 Bot 的 bot 事件只带 {id, deleted: true, rev}（hub.rs:294）——按事件收窄，
+        // 不能进 upsert，否则 normalizeBot 会造出一个名为 "Bot" 的幽灵条目。
+        if ((event.bot as { deleted?: boolean }).deleted === true) {
+          this.botsById.delete(event.bot.id)
+          this.changed({ bots: this.sortedBots(), rev: Math.max(this.snap.rev, event.rev) })
+          break
+        }
         const bot = normalizeBot(event.bot as Partial<Bot> & { id: string })
         this.botsById.set(bot.id, bot)
         this.changed({ bots: this.sortedBots(), rev: Math.max(this.snap.rev, event.rev) })
