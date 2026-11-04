@@ -81,17 +81,20 @@
 
 **结论：发现 [BLOCK] 一处，其余通过**。官方向量 7 项逐字节回归通过；`ChannelFrame` base64url 无填充标注正确；close code 双常量（`REJECT_CLOSE_CODES`/`CHANNEL_CLOSE_CODES`）建模完整。
 
-#### 🔴 [BLOCK] `channel-transport.ts` 握手状态丢失：`lastHello` 从未赋值
+#### 🔴 [BLOCK] `channel-transport.ts` 握手状态丢失：`lastHello` 从未赋值 — ✅ 已修复
 
 - **证据**：`sendHello()`（channel-transport.ts:221-249）只给 `this.ekPrivate` / `this.helloDk` 赋值，**没有设置 `this.lastHello`**；而 `acceptWelcome()` 第 271 行 `if (!dk || !hello || !this.ekPrivate)` 中 `hello = this.lastHello` 永远为 `null` → 真实连接时 welcome 永远以 `protocolError / 握手状态丢失` 关闭，握手不可能成功。
 - 第 356 行 `this.lastHello = this.lastHello ?? null` 是无操作残行，疑似原本想在此/彼处赋值但写丢。
 - **为什么测试没抓到**：`channel-transport.test.ts` 只测 `closePolicyOf` 纯函数，没有 mock socket 走 `sendHello → acceptWelcome` 完整路径；73/73 全绿不覆盖传输层状态机。
 - **修复**：在 `sendHello` 构造 `hello` 后加 `this.lastHello = { ek: hello.ek, n: hello.n }`，并删除第 356 行残行；补一条 mock-WebSocket 握手集成测试（hello → welcome → 能发一帧 RPC）。
 - **责任人**：@希音
+- **复审（2026-11-04，`a389f73..3c93208`）**：✅ `a389f73` 在 sendHello 内 `this.lastHello = { ek: hello.ek, n: hello.n }` 赋值正确，残行已删；`24aa225` 新增 2 条 mock-WebSocket 握手集成测试（正路径 hello→welcome→帧双向可解、负路径 welcome 签名不符→拒绝+中间人提示），传输层状态机覆盖补上。我亲跑 HEAD：tsc 0 错、vitest **75/75**。**BLOCK 解除**。
 
-#### 🟡 [SUGGESTION] `hostSignKey` 可选留下中间人窗口
+#### 🟡 [SUGGESTION] `hostSignKey` 可选留下中间人窗口 — ✅ 已落实
 
 `ChannelOptions.hostSignKey?` 为可选（channel-transport.ts:63），不传则跳过 welcome 签名校验（:274）。app-model 两处调用（:167/:205）都传了 `sk`，但手工直连表单如果允许不填主机公钥，攻击者可 MITM 握手。建议连接页在无 `sk` 时显式警告「未校验主机身份」。
+
+- **复审**：✅ `3c93208` 在 ConnectForm 手工字段下加了警示（无 sk 时提示 welcome 签名校验跳过、建议用配对链接）。配对链接路径 `parsePairingUrl` 强制 sk 本就安全。建议关闭。
 
 #### ✅ 通过项
 
