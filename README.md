@@ -80,6 +80,56 @@ server {
 
 新建 Vercel 项目，**Root Directory 设置为 `web/`**。仓库内 `web/vercel.json` 已限制只有 `main` 和 `dev` 分支触发自动部署，其他分支（含外部 PR）不产生预览。
 
+### 方式 C：Cloudflare（Workers 静态资源，已实测）
+
+前置：安装官方 `cf` CLI（`npm i -g @cloudflare/cli`），执行 `cf login` 完成 OAuth 登录（凭据存于 `~/.config/cloudflare/`，无需 API Token）。
+
+新建一个独立部署目录（不要污染 `web/` 源码），把构建产物拷进去：
+
+```bash
+mkdir -p /workspace/deploy-codync-web && cd /workspace/deploy-codync-web
+cp -r /workspace/codync-web/web/out ./out
+```
+
+写两个配置文件（`package.json` 只需 `"type": "module"`，并装 `cf` 与 `wrangler` 包以加载配置类型）：
+
+`cloudflare.config.ts`：
+
+```ts
+import { defineConfig } from "cf/config";
+
+export default defineConfig({
+  worker: {
+    name: "codync-web",
+    compatibilityDate: "2026-11-01",
+    observability: { enabled: true }
+  }
+});
+```
+
+`wrangler.config.ts`：
+
+```ts
+import { defineWranglerConfig } from "wrangler/experimental-config";
+
+export default defineWranglerConfig({
+  "assetsDirectory": "out"
+});
+```
+
+部署：
+
+```bash
+cd /workspace/deploy-codync-web
+cf deploy          # 生成 <worker名>.<子域>.workers.dev，如 codync-web.xxx.workers.dev
+```
+
+- 更新：重新 `npm run build` 后覆盖 `out/`，再 `cf deploy` 即可，秒级生效
+- 回滚/下线：`cf rollback` 或 `cf delete codync-web`
+- 注意：`workers.dev` 域名在国内可能无法访问，可在 Cloudflare 后台为该 Worker 绑定自定义域名
+
+> 新版 `cf` CLI 不再支持 legacy Pages 部署（`cf pages deploy` 被拒），静态站点统一走 Workers Assets 方式。
+
 ### 部署后访问
 
 浏览器打开 `https://<你的域名>/client`。
