@@ -62,7 +62,7 @@
 
 | 路径 | 内容 | 负责人/状态 |
 |------|------|------------|
-| `app/client/` | 客户端路由（7 页）：`/client` 连接页（演示 / 配对链接 / 已配对直连）、`/client/chat` 工作区、`/client/bots` 管理台（全量列表/隐藏/删除/分组重命名）、`/client/bots/new`、`/client/bots/edit?bot=<id>`（静态导出下动态路由不可用，参数走 query）、`/client/search` 本地搜索、`/client/settings` 设置 | 希音，`29743ed` + Phase 2（`92a9e03..d9f34df`） |
+| `app/client/` | 客户端路由（9 页）：`/client` 连接页（演示 / 配对链接 / 已配对直连）、`/client/chat` 工作区、`/client/bots` 管理台（全量列表/隐藏/删除/分组重命名）、`/client/bots/new`、`/client/bots/edit?bot=<id>`（静态导出下动态路由不可用，参数走 query）、`/client/search` 本地搜索、`/client/settings` 设置、`/client/terminal?backend=<id>&step=install\|login`、`/client/screen` | 希音，Phase 1–3 各特性提交 |
 | `src/client/transport/` | `host-transport.ts`（`HostTransport` 抽象 + `HostError` + close-code 决策类型）、`channel-crypto.ts`（hs1Input、transcriptHash、HKDF 方向密钥、ChaCha20-Poly1305 seal/open、Sealer/Opener，字节布局对齐 `crypto.rs`）、`channel-transport.ts`（`/channel` 直连：hello→welcome 验签→加密帧 RPC + 订阅事件）、`bytes.ts`（base64url 无填充转换）、`device-key.ts`（WebCrypto non-extractable Ed25519 优先 → noble 种子 AES-GCM 包裹 → 内存兜底；文件头明示「不抗同源 XSS」边界）、`pairing-url.ts`（解析 `codync://pair?v=3`，带 `sk` 强校验 welcome 防中间人）、`mock-transport.ts`（演示/测试假主机）；向量副本 `channel-crypto.vectors.json` | 希音，`29743ed` + Phase 1（`3f6a918..1ff4bd7`） |
 | `src/client/store/` | `app-model.ts`：单主机远程模式，rev 游标、按 id upsert、resync 从 0 重追；乐观发送（clientNonce 替换）、历史分页（beforeSeq）、markRead；Phase 2 新增 `bot-admin.ts`（CRUD + `listDirs` + 排序/分组，删除事件按 `{id, deleted:true}` 收窄防幽灵条目，hub.rs:294）、`usage.ts`（hello 基线 + 主动刷新）、`library.ts`（`readArtifact` 分块拼装）、`search.ts`（本地过滤已加载条目） | 希音 |
 | `src/client/use-app-model.ts`、`components/`、`views/` | React 接入（useSyncExternalStore）与视图：`views/connect/ConnectForm.tsx`（三入口）、`views/roster/`（`BotRoster.tsx` + `roster-groups.ts` 分组纯函数 + HTML5 拖拽：拖行=`reorderBots`，拖分组头=`updateBot.section`）、`views/bots/`（`BotForm`/`NewBotForm`/`BotEditor`/`folder-picker` 等）、`views/thread/`（`ThreadView`、`Composer`、`markdown-blocks.ts`、`markdown.tsx`、`message-bubbles.tsx`、`permission-card.tsx`、`attachment-list.tsx`、`composer-files.ts`） | 希音 |
@@ -105,8 +105,8 @@
 - **Phase 1**：远程连接、Bot 列表、消息收发、历史、文件上传、配对认证（已入库 `3f6a918..1ff4bd7`，真实主机联调待做）
 - **Phase 2**：Bot CRUD、分组、设置、用量、Artifact 下载、本地搜索（已入库
   `92a9e03..d9f34df`；未做：Marketplace 页、library 独立浏览页、跨全量历史搜索）
-- **Phase 3**：终端模拟器、语音输入、屏幕查看、网络查看（**实现中**——
-  需求与协议事实基线见 [phase3-features.md](phase3-features.md)；规划组件
-  （CLIENT_DEV_PLAN 命名，路径以实现为准）：TerminalView、DictationEngine
-  适配、ScreenShare 查看器。关键协议约束：屏幕信令必须先开
-  `screenCandidates` 订阅再发 `screenOffer`（signaling.rs:134））
+- **Phase 3**：终端模拟器、语音输入、屏幕查看（**任务 A 已入库**——终端
+  `39204e1`、语音听写 `872c236`、屏幕查看骨架 `1555d6f`，演示模式可体验；
+  网络只读查看未做；真实主机联调待 cargo 环境。协议事实与验收见
+  [phase3-features.md](phase3-features.md)。关键约束：屏幕信令必须先开
+  `screenCandidates` 订阅再发 `screenOffer`，signaling.rs:134）
