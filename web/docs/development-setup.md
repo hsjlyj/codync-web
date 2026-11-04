@@ -29,7 +29,7 @@ npm install          # 新树尚未安装过依赖（2026-11-03 核实）
 | `npm run lint` | ESLint | 希音报 0 错 0 警（`29743ed`），本环境未复跑 |
 | `npm run format:check` | Prettier 检查 | 未验证 |
 | `npm run check:docs` | 站点文档检查（`scripts/check-docs.mjs`） | 未验证 |
-| `npm test` / `npm run test:watch` | Vitest 单测 | **已验证**（2026-11-04 榫卯复跑于 `67b8784`：**50/50**，8 个文件，含 7 项官方向量逐字节回归） |
+| `npm test` / `npm run test:watch` | Vitest 单测 | **已验证**（2026-11-04 榫卯复跑于 `d9f34df`：**73/73**，12 个文件，含 7 项官方向量逐字节回归） |
 | `npm run test:e2e` | Playwright E2E | 待试金补充用例 |
 | `npx --no-install tsc --noEmit`（在 `packages/shared/`） | 共享包类型检查 | **已验证**（2026-11-03 新树复跑，exit 0） |
 
@@ -39,14 +39,14 @@ npm install          # 新树尚未安装过依赖（2026-11-03 核实）
 web/
 ├── app/                        # Next.js App Router（官网 + 客户端）
 │   └── client/                 # /client 连接页 · /client/chat 工作区
-│                               # · /client/{bots,settings} Phase 2 占位
+│                               # · /client/bots 管理台（含 new、edit?bot=<id>）
+│                               # · /client/search · /client/settings
 ├── src/client/                 # Web 客户端实现（测试与源码同目录 *.test.ts）
 │   ├── transport/              # host-transport / channel-crypto（含向量副本）
 │   │                           # / channel-transport / mock-transport
 │   │                           # / bytes / device-key / pairing-url
-│   ├── store/                  # app-model（rev 游标同步 + 乐观发送 + 历史分页）
-│   ├── components/ · views/    # ConnectionBadge · connect / roster / thread 视图
-│   │                           # （markdown 渲染、消息气泡、权限卡、附件列表）
+│   ├── store/                  # app-model · bot-admin · usage · library · search
+│   ├── components/ · views/    # connect / roster（含分组拖拽）/ bots / thread 视图
 │   └── use-app-model.ts        # useSyncExternalStore 接 React
 ├── packages/shared/            # @codync/shared：实体类型 + API 契约 + /channel 线类型
 ├── docs/                       # 本文档目录
@@ -76,11 +76,11 @@ web/
 
 ## 6. 已知坑
 
-- **偶发测试失败**：`src/client/transport/bytes.test.ts` 的「chunk 边界
-  roundtrip」用例较重（实测 ~4.5s；用例本身只遍历到 `UPLOAD_CHUNK + 1`，
-  不构造 100MB 数据——试金核实）。曾观察到一次偶发失败、重跑即过
-  （疑超时/GC 抖动）。稳定性豁免（`testTimeout`、CI 策略）由试金跟进；
-  复现请整跑 `npm test`。
+- **偶发测试失败**：全量 vitest 偶发 1 例失败、重跑即绿（2026-11-04 两次观察：
+  一次为较重的 `bytes` chunk 边界用例 ~4.5s，另一次失败用例未捕获；两次复跑
+  均全绿 73/73）。试金跟进 `testTimeout`/CI 稳定性策略；复现请整跑 `npm test`。
+- **静态导出约束**：动态路由段（`[id]`）在 `output: export` 下不可用，
+  参数走查询串（如 `/client/bots/edit?bot=<id>`）；文档与链接勿写 `[id]` 路径。
 - **废弃树**：`/tmp/Codync-2.38.0/`、`/workspace/Codync-2.38.0/`、`/workspace/web/`
   已废弃（ADR-001 工作区约定），其中残留的 `relay/`/`bridge/` 代码勿参考。
 - **共享树纪律**：动别人有未提交改动的文件前先在群里说明；提交只 stage

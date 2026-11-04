@@ -45,7 +45,10 @@
    [API 参考 §5](api-reference.md)。
 3. **同步模型**：每次变更盖全局递增 `rev`；客户端追平后转实时，按 id upsert，
    不可解码的事件不能跳过（回退 rev 0 重追）。Web 端与手机/桌面端同规则。
-4. **端到端加密**：握手与帧格式见 [API 参考 §5.1](api-reference.md)；
+5. **静态导出约束**：站点用 `next` 的 `output: export`，无法枚举的动态路由段
+   （如 `/bots/[id]`）不可用；需要参数的页面用查询串（编辑页为
+   `/client/bots/edit?bot=<id>`）。新增页面时遵循同一形态。
+6. **端到端加密**：握手与帧格式见 [API 参考 §5.1](api-reference.md)；
    加密实现以官方向量回归（向量文件
    `docs/reference/fixtures/remote-relay-vectors.json`，测试用副本在
    `src/client/transport/channel-crypto.vectors.json`）。
@@ -59,10 +62,10 @@
 
 | 路径 | 内容 | 负责人/状态 |
 |------|------|------------|
-| `app/client/` | 客户端路由：`/client` 连接页（演示模式 + 真实主机表单）、`/client/chat` 工作区（BotRoster + ThreadView + Composer + 连接徽标）、`/client/{bots,settings}` Phase 2 占位 | 希音，`29743ed` |
+| `app/client/` | 客户端路由（7 页）：`/client` 连接页（演示 / 配对链接 / 已配对直连）、`/client/chat` 工作区、`/client/bots` 管理台（全量列表/隐藏/删除/分组重命名）、`/client/bots/new`、`/client/bots/edit?bot=<id>`（静态导出下动态路由不可用，参数走 query）、`/client/search` 本地搜索、`/client/settings` 设置 | 希音，`29743ed` + Phase 2（`92a9e03..d9f34df`） |
 | `src/client/transport/` | `host-transport.ts`（`HostTransport` 抽象 + `HostError` + close-code 决策类型）、`channel-crypto.ts`（hs1Input、transcriptHash、HKDF 方向密钥、ChaCha20-Poly1305 seal/open、Sealer/Opener，字节布局对齐 `crypto.rs`）、`channel-transport.ts`（`/channel` 直连：hello→welcome 验签→加密帧 RPC + 订阅事件）、`bytes.ts`（base64url 无填充转换）、`device-key.ts`（WebCrypto non-extractable Ed25519 优先 → noble 种子 AES-GCM 包裹 → 内存兜底；文件头明示「不抗同源 XSS」边界）、`pairing-url.ts`（解析 `codync://pair?v=3`，带 `sk` 强校验 welcome 防中间人）、`mock-transport.ts`（演示/测试假主机）；向量副本 `channel-crypto.vectors.json` | 希音，`29743ed` + Phase 1（`3f6a918..1ff4bd7`） |
-| `src/client/store/` | `app-model.ts`：单主机远程模式，rev 游标、按 id upsert、resync 从 0 重追（砚台 sync 契约）；Phase 1 增加乐观发送（clientNonce 替换）、历史分页（beforeSeq 游标）、markRead | 希音 |
-| `src/client/use-app-model.ts`、`components/`、`views/` | React 接入（useSyncExternalStore）与视图：`views/connect/ConnectForm.tsx`（演示 / 配对链接粘贴 / 已配对直连三入口）、`views/roster/BotRoster.tsx`、`views/thread/`（`ThreadView`、`Composer`、`markdown-blocks.ts` 纯块解析与桌面端同构、`markdown.tsx` 行内渲染、`message-bubbles.tsx`、`permission-card.tsx`、`attachment-list.tsx`、`composer-files.ts`） | 希音 |
+| `src/client/store/` | `app-model.ts`：单主机远程模式，rev 游标、按 id upsert、resync 从 0 重追；乐观发送（clientNonce 替换）、历史分页（beforeSeq）、markRead；Phase 2 新增 `bot-admin.ts`（CRUD + `listDirs` + 排序/分组，删除事件按 `{id, deleted:true}` 收窄防幽灵条目，hub.rs:294）、`usage.ts`（hello 基线 + 主动刷新）、`library.ts`（`readArtifact` 分块拼装）、`search.ts`（本地过滤已加载条目） | 希音 |
+| `src/client/use-app-model.ts`、`components/`、`views/` | React 接入（useSyncExternalStore）与视图：`views/connect/ConnectForm.tsx`（三入口）、`views/roster/`（`BotRoster.tsx` + `roster-groups.ts` 分组纯函数 + HTML5 拖拽：拖行=`reorderBots`，拖分组头=`updateBot.section`）、`views/bots/`（`BotForm`/`NewBotForm`/`BotEditor`/`folder-picker` 等）、`views/thread/`（`ThreadView`、`Composer`、`markdown-blocks.ts`、`markdown.tsx`、`message-bubbles.tsx`、`permission-card.tsx`、`attachment-list.tsx`、`composer-files.ts`） | 希音 |
 | `packages/shared/` | `@codync/shared` 0.1.0：`models.ts`（实体类型+纯函数）、`api-types.ts`（API 契约 + `/channel` 线类型），零运行时依赖 | 砚台，typecheck 通过 |
 | `docs/` | 本目录 | 榫卯 |
 | `test/` + `vitest.config.ts` | 测试配置 | 试金 |
@@ -100,14 +103,6 @@
 
 - **Phase 0**：脚手架 + ADR-001 决策 + 架构评审（已完成，`29743ed`）
 - **Phase 1**：远程连接、Bot 列表、消息收发、历史、文件上传、配对认证（已入库 `3f6a918..1ff4bd7`，真实主机联调待做）
-- **Phase 2**：Bot CRUD、设置、用量统计、Artifact、Marketplace（**进行中**——
-  需求见 [phase2-user-stories.md](phase2-user-stories.md) 与
-  [phase2-features.md](phase2-features.md)；规划新增模块（未实现，路径以实现为准）：
-
-  ```
-  web/src/client/views/bots/       # Bot 表单（新建/编辑）与列表操作
-  web/src/client/views/settings/   # 设置面板
-  web/src/client/views/search/     # 搜索面板（本地过滤，跨历史搜索待主机 API，未决）
-  ```
-  ）
+- **Phase 2**：Bot CRUD、分组、设置、用量、Artifact 下载、本地搜索（已入库
+  `92a9e03..d9f34df`；未做：Marketplace 页、library 独立浏览页、跨全量历史搜索）
 - **Phase 3**：终端、语音、网络管理、屏幕查看、PWA

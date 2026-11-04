@@ -18,13 +18,14 @@
 
 | 功能 | 状态 | 主机调用 |
 |------|------|----------|
-| 新建 Bot | Phase 2 规划 | `createBot`（`BotDraft` → `{bot}`） |
-| 编辑 Bot | Phase 2 规划 | `updateBot`（`BotDraft` → `{bot}`） |
-| 删除 Bot | Phase 2 规划 | `deleteBot`（`{botId}`） |
-| 排序与分组 | Phase 2 规划 | `reorderBots({ids})` 整体顺序 · `updateBot` 的 `section` 字段移动分组 · `renameSection({from, to?})` 改名/清空 |
-| 设置面板 | Phase 2 规划 | `hello`（主机信息 name/version/os）+ 本地偏好 |
-| 搜索（本地过滤） | Phase 2 规划 | 无主机调用（过滤已加载消息） |
-| Artifact 查看 / Marketplace / 用量统计 | Phase 2 规划（后置） | `library` / `readArtifact` / `usage` 等 |
+| 新建 Bot | **已实现**（`92a9e03..d9f34df`） | `createBot`（`BotDraft` → `{bot}`） |
+| 编辑 Bot | **已实现**（`id` 必填；编辑页 `/client/bots/edit?bot=<id>`） | `updateBot`（`BotDraft` → `{bot}`） |
+| 删除 Bot | **已实现**（删除事件按 `{id, deleted:true}` 收窄） | `deleteBot`（`{botId}`） |
+| 排序与分组 | **已实现**（HTML5 拖拽：拖行=排序，拖分组头=移动） | `reorderBots({ids})` 整体顺序 · `updateBot` 的 `section` 字段移动分组 · `renameSection({from, to?})` 改名/清空 |
+| 设置面板 | **已实现**（连接信息/密钥形态/断开清密钥/用量/后端列表） | `hello` + `usage` + 本地偏好 |
+| 搜索（本地过滤） | **已实现**（正文/附件名/工件标题，大小写不敏感） | 无主机调用（过滤已加载条目） |
+| Artifact 下载 | **已实现**（聊天卡下载，`readArtifact` 分块）；library 独立浏览页未做 | `library` / `readArtifact` / `renameArtifact` |
+| Marketplace | 未动（不在 Phase 2 任务单） | `marketConnectors` / `marketSkills` |
 
 ## 2. 验收标准（Given / When / Then）
 
