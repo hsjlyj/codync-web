@@ -29,7 +29,7 @@ npm install          # 新树尚未安装过依赖（2026-11-03 核实）
 | `npm run lint` | ESLint | 希音报 0 错 0 警（`29743ed`），本环境未复跑 |
 | `npm run format:check` | Prettier 检查 | 未验证 |
 | `npm run check:docs` | 站点文档检查（`scripts/check-docs.mjs`） | 未验证 |
-| `npm test` / `npm run test:watch` | Vitest 单测 | **已验证**（2026-11-03 榫卯复跑：14/14，含 7 项官方向量逐字节回归） |
+| `npm test` / `npm run test:watch` | Vitest 单测 | **已验证**（2026-11-04 榫卯复跑于 `1ff4bd7`：**44/44**，7 个文件，含 7 项官方向量逐字节回归） |
 | `npm run test:e2e` | Playwright E2E | 待试金补充用例 |
 | `npx --no-install tsc --noEmit`（在 `packages/shared/`） | 共享包类型检查 | **已验证**（2026-11-03 新树复跑，exit 0） |
 
@@ -43,8 +43,10 @@ web/
 ├── src/client/                 # Web 客户端实现（测试与源码同目录 *.test.ts）
 │   ├── transport/              # host-transport / channel-crypto（含向量副本）
 │   │                           # / channel-transport / mock-transport
-│   ├── store/                  # app-model（rev 游标同步）
+│   │                           # / bytes / device-key / pairing-url
+│   ├── store/                  # app-model（rev 游标同步 + 乐观发送 + 历史分页）
 │   ├── components/ · views/    # ConnectionBadge · connect / roster / thread 视图
+│   │                           # （markdown 渲染、消息气泡、权限卡、附件列表）
 │   └── use-app-model.ts        # useSyncExternalStore 接 React
 ├── packages/shared/            # @codync/shared：实体类型 + API 契约 + /channel 线类型
 ├── docs/                       # 本文档目录

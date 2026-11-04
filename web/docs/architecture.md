@@ -1,6 +1,6 @@
 # Web 客户端架构说明
 
-> 基线：Codync v2.38.0 · 更新：2026-11-03 · 状态：Phase 0 · 维护：榫卯
+> 基线：Codync v2.38.0 · 更新：2026-11-04 · 状态：Phase 1 已入库 · 维护：榫卯
 > 接入路径遵循 [ADR-001](adr/001-channel-e2e.md)：浏览器直连 `/channel` E2E 通道，无中间层。
 
 ## 1. 总览
@@ -60,9 +60,9 @@
 | 路径 | 内容 | 负责人/状态 |
 |------|------|------------|
 | `app/client/` | 客户端路由：`/client` 连接页（演示模式 + 真实主机表单）、`/client/chat` 工作区（BotRoster + ThreadView + Composer + 连接徽标）、`/client/{bots,settings}` Phase 2 占位 | 希音，`29743ed` |
-| `src/client/transport/` | `host-transport.ts`（`HostTransport` 抽象 + `HostError` + close-code 决策类型）、`channel-crypto.ts`（hs1Input、transcriptHash、HKDF 方向密钥、ChaCha20-Poly1305 seal/open、Sealer/Opener，字节布局对齐 `crypto.rs`）、`channel-transport.ts`（`/channel` 直连：hello→welcome 验签→加密帧 RPC + 订阅事件）、`mock-transport.ts`（演示/测试假主机）；向量副本 `channel-crypto.vectors.json` | 希音，`29743ed` |
-| `src/client/store/` | `app-model.ts`：单主机远程模式，rev 游标、按 id upsert、resync 从 0 重追（砚台 sync 契约） | 希音，`29743ed` |
-| `src/client/use-app-model.ts`、`components/`、`views/` | React 接入（useSyncExternalStore）与视图（connect / roster / thread） | 希音，`29743ed` |
+| `src/client/transport/` | `host-transport.ts`（`HostTransport` 抽象 + `HostError` + close-code 决策类型）、`channel-crypto.ts`（hs1Input、transcriptHash、HKDF 方向密钥、ChaCha20-Poly1305 seal/open、Sealer/Opener，字节布局对齐 `crypto.rs`）、`channel-transport.ts`（`/channel` 直连：hello→welcome 验签→加密帧 RPC + 订阅事件）、`bytes.ts`（base64url 无填充转换）、`device-key.ts`（WebCrypto non-extractable Ed25519 优先 → noble 种子 AES-GCM 包裹 → 内存兜底；文件头明示「不抗同源 XSS」边界）、`pairing-url.ts`（解析 `codync://pair?v=3`，带 `sk` 强校验 welcome 防中间人）、`mock-transport.ts`（演示/测试假主机）；向量副本 `channel-crypto.vectors.json` | 希音，`29743ed` + Phase 1（`3f6a918..1ff4bd7`） |
+| `src/client/store/` | `app-model.ts`：单主机远程模式，rev 游标、按 id upsert、resync 从 0 重追（砚台 sync 契约）；Phase 1 增加乐观发送（clientNonce 替换）、历史分页（beforeSeq 游标）、markRead | 希音 |
+| `src/client/use-app-model.ts`、`components/`、`views/` | React 接入（useSyncExternalStore）与视图：`views/connect/ConnectForm.tsx`（演示 / 配对链接粘贴 / 已配对直连三入口）、`views/roster/BotRoster.tsx`、`views/thread/`（`ThreadView`、`Composer`、`markdown-blocks.ts` 纯块解析与桌面端同构、`markdown.tsx` 行内渲染、`message-bubbles.tsx`、`permission-card.tsx`、`attachment-list.tsx`、`composer-files.ts`） | 希音 |
 | `packages/shared/` | `@codync/shared` 0.1.0：`models.ts`（实体类型+纯函数）、`api-types.ts`（API 契约 + `/channel` 线类型），零运行时依赖 | 砚台，typecheck 通过 |
 | `docs/` | 本目录 | 榫卯 |
 | `test/` + `vitest.config.ts` | 测试配置 | 试金 |
@@ -83,15 +83,22 @@
 | `views/settings/*` | 精简版 | 设备/云等本机专属设置不进 Web |
 | `views/computer-access/*`、`views/island/*` | 暂不实现 | 依赖本机屏幕权限/系统窗口 |
 
-## 5. 阶段规划（摘要，详见 CLIENT_DEV_PLAN.md）
-
-- **Phase 0（当前）**：脚手架 + ADR-001 决策 + 架构评审
-- **Phase 1**：远程连接、Bot 列表、消息收发、历史、文件上传、配对认证
-- **Phase 2**：Bot CRUD、设置、用量统计、Artifact、Marketplace
-- **Phase 3**：终端、语音、网络管理、屏幕查看、PWA
-
-## 6. 与其他端的一致性
+## 5. 与其他端的一致性
 
 按上游规则，任何 UI 变更需同步 iOS / Android / 桌面 / TUI 各端
 （详见仓库根 AGENTS.md「Cross-platform UI changes」）。Web 端作为新客户端，
 功能对齐以桌面端为准；平台专属能力（托盘、本地语音引擎、屏幕控制）不进 Web 端。
+
+## 6. 配对约束（主机 2.38.0 现状，影响真实主机连接）
+
+| 约束 | 依据 | 现状与对策 |
+|------|------|-----------|
+| 配对平台白名单只有 `ios\|macos\|android`，`web` 会被 400 拒 | `host/src/remote/channel/pairing.rs`（`platform` match） | Web 端暂以 `macos` 登记（连接页已注明）；待主机侧白名单加 `web` |
+| 配对要求云签发的设备证书，缺失 → `Refusal::Missing` → `RejectCode::UnsupportedVersion` → close 4400 | `host/src/remote/certificate.rs`（`check()`）、`channel/pairing.rs:83` | 主机需开启云且已登录；Web 的云登录证书流程属 Phase 2，连接页留有证书 JSON 粘贴栏可对云开启的主机实测 |
+
+## 7. 阶段规划（摘要，详见 CLIENT_DEV_PLAN.md）
+
+- **Phase 0**：脚手架 + ADR-001 决策 + 架构评审（已完成，`29743ed`）
+- **Phase 1**：远程连接、Bot 列表、消息收发、历史、文件上传、配对认证（已入库 `3f6a918..1ff4bd7`，真实主机联调待做）
+- **Phase 2**：Bot CRUD、设置、用量统计、Artifact、Marketplace
+- **Phase 3**：终端、语音、网络管理、屏幕查看、PWA
