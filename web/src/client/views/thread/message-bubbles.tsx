@@ -5,7 +5,7 @@
  * user（右对齐，附件+引用+状态）、agent（左对齐，Markdown/文件/artifact 卡）、notice（居中细行，error 样式）。
  * 群聊作者标签、表情回应、右键菜单属 Phase 2（桌面端 ReactionsRow/AnchoredMenu 对应物）。
  */
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import type { Entry, ReplyQuote } from '@codync/shared'
 import { MarkdownText } from './markdown'
 import { AttachmentList, SharedFileList } from './attachment-list'
@@ -89,11 +89,58 @@ function ReplyButton({ onClick }: { onClick: () => void }) {
   )
 }
 
-function ArtifactCardPlaceholder({ botId, title }: { botId: string; title: string }) {
+/** Artifact 卡（Phase 2）：标题 + 更新时间 + 下载；字节经 loadArtifact 分块读回（store/library.ts）。 */
+function ArtifactCardView({
+  botId,
+  card,
+  loadArtifact,
+}: {
+  botId: string
+  card: { id: string; title: string; updatedAt?: number }
+  loadArtifact: (botId: string, artifactId: string) => Promise<Uint8Array>
+}) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const download = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const bytes = await loadArtifact(botId, card.id)
+      const blob = new Blob([bytes.buffer as ArrayBuffer], { type: 'application/octet-stream' })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = card.title || 'artifact'
+      anchor.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="rounded-xl border border-neutral-700 bg-neutral-900/70 px-3.5 py-2.5">
-      <p className="text-xs font-medium text-neutral-200">{title || 'Artifact'}</p>
-      <p className="mt-0.5 text-[10px] text-neutral-500">Bot {botId} 发布的工件 · 浏览器内查看将在 Phase 2 支持</p>
+      <div className="flex items-center gap-2">
+        <span aria-hidden className="text-base">
+          📦
+        </span>
+        <span className="min-w-0 flex-1 truncate text-xs font-medium text-neutral-200">{card.title || 'Artifact'}</span>
+        <button
+          type="button"
+          onClick={() => void download()}
+          disabled={busy}
+          className="shrink-0 rounded-lg bg-neutral-800 px-2.5 py-1 text-[11px] text-neutral-300 hover:bg-neutral-700 disabled:opacity-50"
+        >
+          {busy ? '读取中…' : '下载'}
+        </button>
+      </div>
+      <p className="mt-0.5 text-[10px] text-neutral-500">
+        {card.updatedAt ? `${fullDate.format(card.updatedAt)} · ` : ''}Bot 发布的工件
+        {error ? ` · 下载失败：${error}` : ''}
+      </p>
     </div>
   )
 }
@@ -101,17 +148,25 @@ function ArtifactCardPlaceholder({ botId, title }: { botId: string; title: strin
 export const AgentBubble = memo(function AgentBubble({
   entry,
   loadSharedFile,
+  loadArtifact,
   onReply,
 }: {
   entry: Entry
   loadSharedFile: (entryId: string, id: string) => Promise<Uint8Array>
+  loadArtifact?: (botId: string, artifactId: string) => Promise<Uint8Array>
   onReply?: (e: Entry) => void
 }) {
   const text = typeof entry.data.text === 'string' ? entry.data.text : ''
   return (
     <div className="group flex flex-col items-start gap-1" title={fullDate.format(entry.createdAt)}>
       {entry.data.artifact ? (
-        <ArtifactCardPlaceholder botId={entry.botId} title={entry.data.artifact.title ?? ''} />
+        loadArtifact ? (
+          <ArtifactCardView botId={entry.botId} card={entry.data.artifact} loadArtifact={loadArtifact} />
+        ) : (
+          <div className="rounded-xl border border-neutral-700 bg-neutral-900/70 px-3.5 py-2.5 text-xs text-neutral-200">
+            📦 {entry.data.artifact.title || 'Artifact'}
+          </div>
+        )
       ) : entry.data.files?.length ? (
         <SharedFileList files={entry.data.files} entryId={entry.id} loadBytes={loadSharedFile} />
       ) : (

@@ -18,18 +18,25 @@ const HISTORY_PAGE = 50
 // 稳定引用（模块级）：气泡 memo 的 props 浅比较才不会被每次渲染的新闭包击穿。
 const readUpload = (botId: string, id: string) => appModel.readUploadBytes(botId, id)
 const readFile = (entryId: string, id: string) => appModel.readEntryFileBytes(entryId, id)
-
 /** Web 端可引用的行：真实主机条目（非本地占位）的 user/agent final（桌面端 isReplyable 同义）。 */
 const isReplyableWeb = (entry: Entry): boolean =>
   !entry.id.startsWith('local-') && (entry.kind === 'user' || (entry.kind === 'agent' && entry.data.final === true))
 
-function EntryRow({ entry, onReply }: { entry: Entry; onReply?: (e: Entry) => void }) {
+function EntryRow({
+  entry,
+  onReply,
+  loadArtifact,
+}: {
+  entry: Entry
+  onReply?: (e: Entry) => void
+  loadArtifact?: (botId: string, artifactId: string) => Promise<Uint8Array>
+}) {
   const reply = onReply && isReplyableWeb(entry) ? onReply : undefined
   switch (entry.kind) {
     case 'user':
       return <UserBubble entry={entry} loadBytes={readUpload} onReply={reply} />
     case 'agent':
-      return <AgentBubble entry={entry} loadSharedFile={readFile} onReply={reply} />
+      return <AgentBubble entry={entry} loadSharedFile={readFile} loadArtifact={loadArtifact} onReply={reply} />
     case 'permission': {
       const snap = appModel.getSnapshot()
       return (
@@ -53,11 +60,13 @@ export function ThreadView({
   botName,
   botId,
   onReply,
+  loadArtifact,
 }: {
   entries: Entry[]
   botName: string | null
   botId: string | null
   onReply?: (e: Entry) => void
+  loadArtifact?: (botId: string, artifactId: string) => Promise<Uint8Array>
 }) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const [loadingOlder, setLoadingOlder] = useState(false)
@@ -111,7 +120,7 @@ export function ThreadView({
         )}
         {count === 0 && <p className="text-center text-sm text-neutral-600">暂无消息记录</p>}
         {chat.map((entry) => (
-          <EntryRow key={entry.id} entry={entry} onReply={onReply} />
+          <EntryRow key={entry.id} entry={entry} onReply={onReply} loadArtifact={loadArtifact} />
         ))}
         <div ref={bottomRef} />
       </div>
