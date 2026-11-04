@@ -95,6 +95,7 @@ export default function ChatPage() {
             <LinkTile href="/client/bots" label="管理" />
             <LinkTile href="/client/search" label="搜索" />
             <LinkTile href="/client/settings" label="设置" />
+            <LinkTile href="/client/terminal" label="终端" />
           </nav>
         </aside>
         <main className="flex min-w-0 flex-1 flex-col">

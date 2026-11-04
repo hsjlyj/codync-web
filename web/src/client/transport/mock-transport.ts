@@ -20,6 +20,7 @@ import type {
 import { normalizeBot } from '@codync/shared'
 import { toBase64 } from './bytes'
 import { demoDirListing } from './mock-dirs'
+import { MockRemote } from './mock-remote'
 import { HostError, type HostTransport } from './host-transport'
 
 export class MockTransport implements HostTransport {
@@ -82,6 +83,8 @@ export class MockTransport implements HostTransport {
   /** 演示工件（readArtifact 按块截断，验证客户端分块组装）。 */
   private artifacts = new Map<string, Artifact>()
   private artifactBytes = new Map<string, Uint8Array>()
+  /** Phase 3 终端（屏幕后续同入 mock-remote）：call 与流均由其接管。 */
+  private readonly remote = new MockRemote()
 
   constructor(private readonly hostName = '演示主机') {}
 
@@ -375,6 +378,11 @@ export class MockTransport implements HostTransport {
         this.emit({ type: 'artifact', rev: renamed.rev, artifact: renamed })
         return { artifact: renamed } as T
       }
+      case 'agentSetup':
+      case 'termInput':
+      case 'termResize':
+      case 'termClose':
+        return this.remote.call<T>(method, b)
       default:
         throw new HostError(404, `演示模式未实现方法：${method}`)
     }
@@ -388,42 +396,43 @@ export class MockTransport implements HostTransport {
   }
 
   stream(path: string, onData: (event: unknown) => void, onEnd: (error: HostError | null) => void): () => void {
-    if (!path.startsWith('/events')) {
-      onEnd(new HostError(404, `演示模式未实现流：${path}`))
-      return () => {}
-    }
-    this.eventSink = onData
-    queueMicrotask(() => {
-      onData({
-        type: 'hello',
-        hostId: 'mock-host',
-        computerId: 'mock',
-        rev: this.rev,
-        usage: { providers: [] },
-        screen: MockTransport.mockScreen,
-        network: null,
-        catchUp: this.bots.length,
-      } satisfies HostEvent)
-      for (const bot of this.bots) onData({ type: 'bot', rev: bot.rev, bot } satisfies HostEvent)
-      // 一张待审批的权限卡：让演示模式覆盖 PermissionCard 的完整交互（回应走 respondPermission）。
-      const ask = this.entry('bot-claude', 'permission', {
-        status: 'pending',
-        toolKind: 'execute',
-        title: 'npm install --save-dev vitest',
-        command: 'npm install --save-dev vitest',
-        cwd: '~/demo',
-        options: [
-          { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
-          { optionId: 'allow_always', name: 'Always allow', kind: 'allow_always' },
-          { optionId: 'reject_once', name: 'Deny', kind: 'reject_once' },
-        ],
+    if (path.startsWith('/events')) {
+      this.eventSink = onData
+      queueMicrotask(() => {
+        onData({
+          type: 'hello',
+          hostId: 'mock-host',
+          computerId: 'mock',
+          rev: this.rev,
+          usage: { providers: [] },
+          screen: MockTransport.mockScreen,
+          network: null,
+          catchUp: this.bots.length,
+        } satisfies HostEvent)
+        for (const bot of this.bots) onData({ type: 'bot', rev: bot.rev, bot } satisfies HostEvent)
+        // 一张待审批的权限卡：让演示模式覆盖 PermissionCard 的完整交互（回应走 respondPermission）。
+        const ask = this.entry('bot-claude', 'permission', {
+          status: 'pending',
+          toolKind: 'execute',
+          title: 'npm install --save-dev vitest',
+          command: 'npm install --save-dev vitest',
+          cwd: '~/demo',
+          options: [
+            { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+            { optionId: 'allow_always', name: 'Always allow', kind: 'allow_always' },
+            { optionId: 'reject_once', name: 'Deny', kind: 'reject_once' },
+          ],
+        })
+        this.push(ask)
       })
-      this.push(ask)
-    })
-    return () => {
-      this.eventSink = null
-      onEnd(null)
+      return () => {
+        this.eventSink = null
+        onEnd(null)
+      }
     }
+    if (path.startsWith('/term/')) return this.remote.termStream(path, onData, onEnd)
+    onEnd(new HostError(404, `演示模式未实现流：${path}`))
+    return () => {}
   }
 
   private eventSink: ((event: unknown) => void) | null = null
