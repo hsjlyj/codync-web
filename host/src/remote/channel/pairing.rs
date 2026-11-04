@@ -32,9 +32,9 @@ impl Channel {
             Err(close) => return close,
         };
         let name = b["name"].as_str().map(str::trim).filter(|n| !n.is_empty() && n.chars().count() <= 100);
-        let platform = b["platform"].as_str().filter(|p| matches!(*p, "ios" | "macos" | "android"));
+        let platform = b["platform"].as_str().filter(|p| matches!(*p, "ios" | "macos" | "android" | "web"));
         let (Some(name), Some(platform)) = (name, platform) else {
-            self.send(err(id, 400, "`name` and `platform` (ios, macos or android) are required")).await;
+            self.send(err(id, 400, "`name` and `platform` (ios, macos, android or web) are required")).await;
             return PROTOCOL;
         };
         let code = b["code"].as_str().unwrap_or_default();
