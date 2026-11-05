@@ -1,9 +1,15 @@
 # Local run of both images.
 #
 #   docker compose up --build          # build from this checkout
-#   CODYNC_IMAGE_NAMESPACE=<you> docker compose up   # use the published images
 #
-# The published layout is the same: <namespace>/codync-host, <namespace>/codync-web.
+# The published images live on GHCR. The namespace has to carry the registry
+# host, because the image template below has none:
+#
+#   CODYNC_IMAGE_NAMESPACE=ghcr.io/hsjlyj CODYNC_IMAGE_TAG=2.38.0 \
+#     docker compose up --no-build
+#
+# --no-build is required: both services keep a build: section, so a plain `up`
+# would rebuild from this checkout instead of pulling the published image.
 #
 # After the containers are up, pair a client from inside the host container —
 # a container has no desktop app, so approving a device is the CLI:
