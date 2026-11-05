@@ -177,10 +177,11 @@ mod tests {
         let area = buf.area;
         ask(&mut buf, area, &request);
         let text = shown(&buf);
-        let expected = tr("{name} wants to use this computer. It joins {email}'s account. Check the phone shows {code}.")
-            .replace("{name}", "Pixel")
-            .replace("{email}", "k@example.com")
-            .replace("{code}", "123\u{a0}456");
+        let expected =
+            tr("{name} wants to use this computer. It joins {email}'s account. Check the phone shows {code}.")
+                .replace("{name}", "Pixel")
+                .replace("{email}", "k@example.com")
+                .replace("{code}", "123\u{a0}456");
         for line in wrapped_lines(&expected) {
             assert!(text.contains(line.as_str()), "{line} in\n{text}");
         }

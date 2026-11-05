@@ -68,7 +68,6 @@ async fn a_local_device_turned_down_leaves_the_code_to_the_right_one() {
     assert!(hub.pairing.locked().valid(&code), "a turned-down device leaves the code to the right one");
 }
 
-
 #[tokio::test]
 async fn an_uncertified_device_is_rejected_by_an_account_owned_host() {
     let hub = temp_hub();
