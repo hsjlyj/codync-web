@@ -64,7 +64,7 @@ codync-host (Rust)
 
 - Web 端实现 `ChannelTransport implements HostTransport`（call + stream）
 - 上层 `HostClient` / `BotStore` / `AppModel` 逻辑复用桌面端抽象
-- 禁止 import `apps/desktop/src/renderer/` 源码，只依赖 `@codync/shared` 类型
+- 禁止 import 上游桌面客户端源码（`apps/desktop/src/renderer/`，本仓库已移除），只依赖 `@codync/shared` 类型
 
 ## 工作区约定
 

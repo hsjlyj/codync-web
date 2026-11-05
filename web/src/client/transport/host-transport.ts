@@ -1,6 +1,6 @@
 /**
  * 主机传输层抽象 —— 与桌面端 `apps/desktop/src/renderer/client/host-client.ts` 的
- * `HostTransport` 同构（call + stream 两个原语，岚序评审认可的复用点）。
+ * `HostTransport` 同构（call + stream 两个原语，岚序评审认可的复用点；该目录属上游仓库，本仓库已移除）。
  * Web 端实现：`ChannelTransport`（/channel E2E，ADR-001）与 `MockTransport`（Phase 0 演示）。
  */
 

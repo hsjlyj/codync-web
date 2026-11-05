@@ -1,5 +1,6 @@
 // 块级 Markdown 解析（纯函数，与桌面端 apps/desktop/src/renderer/views/thread/markdown-blocks.ts
-// 行为一致：段落、标题、嵌套列表、引用、分隔线、表格、围栏代码块）。回复里的消息用同一套渲染。
+// 行为一致：段落、标题、嵌套列表、引用、分隔线、表格、围栏代码块；桌面端目录属上游仓库，本仓库已移除）。
+// 回复里的消息用同一套渲染。
 
 export type Block =
   | { kind: 'paragraph'; text: string }

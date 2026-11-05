@@ -8,7 +8,7 @@
  * - bot-state.ts：花名册 upsert 与删除收窄（BotState）
  * - real-host.ts：/channel E2E + 配对编排（connectToRealHost）
  * - bot-admin.ts：Bot CRUD/排序/分组（BotAdmin）
- * 快照形状见 snapshot.ts；桌面端对应物 apps/desktop/src/renderer/store/app-model.ts。
+ * 快照形状见 snapshot.ts；桌面端对应物 apps/desktop/src/renderer/store/app-model.ts（上游仓库，本仓库已移除）。
  */
 import type { Attachment, Entry, Hello, HostEvent, Usage } from '@codync/shared'
 import { clearDevice } from '../transport/device-key'

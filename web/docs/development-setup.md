@@ -71,7 +71,7 @@ web/
 | 方法权限边界（LOCAL_ONLY） | `host/src/api/devices.rs` |
 | API 全集 | `docs/api-reference.md`（本目录） |
 | 测试向量 | `docs/reference/fixtures/remote-relay-vectors.json`（12 组） |
-| 桌面端传输抽象 | `apps/desktop/src/shared/host-client.ts`（`HostTransport`） |
+| 桌面端传输抽象 | `apps/desktop/src/shared/host-client.ts`（`HostTransport`）——上游仓库，本仓库已移除该目录 |
 
 ## 5. 实现加密时的两条硬规则
 

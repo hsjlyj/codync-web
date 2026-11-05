@@ -6,7 +6,7 @@
 
 - [ ] 走 `/channel` E2E 通道，不直接调用主机 HTTP API
 - [ ] 实现 `RemoteTransport implements HostTransport`，上层逻辑复用桌面 `HostClient/AppModel`
-- [ ] 未直接 import `apps/desktop/src/renderer/` 源码，仅依赖 `@codync/shared` 类型
+- [ ] 未直接 import 上游桌面客户端源码（`apps/desktop/src/renderer/`，本仓库已移除），仅依赖 `@codync/shared` 类型
 - [ ] 不持有主机 Bearer Token，device key 由浏览器生成并在内存中持有
 
 **证据**：检查 `ChannelTransport` 实现、依赖树，无 `http://127.0.0.1:19222/api` 直连
