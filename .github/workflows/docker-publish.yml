@@ -1,29 +1,41 @@
 name: docker images
 
-# Builds the two images and — when Docker Hub credentials exist — publishes them:
+# Builds both images, smoke-tests them, and publishes them to the GitHub
+# Container Registry on every run:
 #
-#   docker.io/<DOCKERHUB_USERNAME>/codync-host
-#   docker.io/<DOCKERHUB_USERNAME>/codync-web
+#   ghcr.io/<owner>/codync-host
+#   ghcr.io/<owner>/codync-web
 #
-# Two repository secrets enable publishing:
+# GHCR needs no credentials at all: the run authenticates with the built-in
+# GITHUB_TOKEN under the `packages: write` permission declared below, so this is
+# the path that produces a publicly verifiable manifest without asking the user
+# for anything. Note that a package pushed for the first time is *private*; its
+# visibility is a repository setting and has to be switched to Public by hand.
+#
+# Docker Hub is published in addition to GHCR when both repository secrets are
+# present:
 #   DOCKERHUB_USERNAME  the account or organization
 #   DOCKERHUB_TOKEN     an access token with Read & Write
 #
-# Without them the workflow still builds both images and smoke-tests them; it
-# only skips the push, so the Dockerfiles stay verifiable before credentials
-# are in place.
+# Tags: `latest` is produced only for v* tags; every run additionally tags the
+# short commit sha, so each build stays individually referenceable.
 
 on:
   workflow_dispatch:
     inputs:
       push:
-        description: "Publish to Docker Hub (needs the DOCKERHUB_* secrets)"
+        description: "Publish the images (GHCR always; Docker Hub too when its secrets exist)"
         type: boolean
         default: true
   push:
     branches:
       - ci/docker-images
       - 'verify/**'
+      # The repository's default branch goes here so that a merge also produces
+      # a sha-<7> tag that can be quoted long after the ci/ branch is gone. A
+      # branch filter cannot read the default branch at runtime, so this name
+      # has to be kept in sync if the default branch is ever renamed.
+      - feat/web-client
     tags:
       - "v*"
 
@@ -33,6 +45,7 @@ concurrency:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   images:
@@ -55,28 +68,49 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Decide the image name and whether this run publishes
+      - name: Decide where this run publishes
         id: mode
         env:
           HUB_USER: ${{ secrets.DOCKERHUB_USERNAME }}
           HUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           REQUESTED: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
         run: |
-          if [ -n "$HUB_USER" ] && [ -n "$HUB_TOKEN" ] && [ "$REQUESTED" = "true" ]; then
-            {
-              echo "push=true"
-              echo "images=$HUB_USER/${{ matrix.repository }}"
-            } >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          # GHCR rejects an uppercase owner.
+          owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          publish=false
+          hub=false
+          images="local/${{ matrix.repository }}"
+          if [ "$REQUESTED" = "true" ]; then
+            publish=true
+            images="ghcr.io/$owner/${{ matrix.repository }}"
+            if [ -n "$HUB_USER" ] && [ -n "$HUB_TOKEN" ]; then
+              hub=true
+              images="$images"$'\n'"$HUB_USER/${{ matrix.repository }}"
+            else
+              echo "::notice::Docker Hub secrets are absent — publishing to GHCR only."
+            fi
           else
-            {
-              echo "push=false"
-              echo "images=local/${{ matrix.repository }}"
-            } >> "$GITHUB_OUTPUT"
-            echo "::warning::Not publishing (no Docker Hub credentials, or push was turned off) — building and smoke-testing locally."
+            echo "::warning::Publishing was turned off for this run — building and smoke-testing locally."
           fi
+          {
+            echo "publish=$publish"
+            echo "hub=$hub"
+            echo "images<<IMAGES_EOF"
+            echo "$images"
+            echo "IMAGES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        if: steps.mode.outputs.publish == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to Docker Hub
-        if: steps.mode.outputs.push == 'true'
+        if: steps.mode.outputs.hub == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -102,20 +136,37 @@ jobs:
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          push: ${{ steps.mode.outputs.push == 'true' }}
+          push: ${{ steps.mode.outputs.publish == 'true' }}
           load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
-      - name: Pull the pushed tag back from the registry
-        if: steps.mode.outputs.push == 'true'
+      # Pulling back what was just pushed is the only check that the manifest
+      # really landed in a registry other people can read, rather than merely
+      # being accepted by the daemon that built it.
+      - name: Pull the pushed tags back from the registries
+        if: steps.mode.outputs.publish == 'true'
         run: |
           set -euo pipefail
-          image="$(echo "${{ steps.meta.outputs.tags }}" | head -1)"
-          docker pull "$image"
-          echo "pulled $image"
+          tag="$(echo "${{ steps.meta.outputs.tags }}" | grep -m1 '^ghcr\.io/')"
+          docker pull "$tag"
+          echo "pulled $tag"
+          if [ "${{ steps.mode.outputs.hub }}" = "true" ]; then
+            tag="$(echo "${{ steps.meta.outputs.tags }}" | grep -vm1 '^ghcr\.io/')"
+            docker pull "$tag"
+            echo "pulled $tag"
+          fi
+
+      # The architecture recorded in the registry is what the docs have to
+      # quote, so put it in the log instead of leaving it to be inferred.
+      - name: Report the published manifest
+        if: steps.mode.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          tag="$(echo "${{ steps.meta.outputs.tags }}" | grep -m1 '^ghcr\.io/')"
+          docker buildx imagetools inspect "$tag"
 
       - name: Smoke test (host)
         if: matrix.name == 'host'
