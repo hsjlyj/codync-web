@@ -20,7 +20,22 @@ services:
     container_name: codync-host
     restart: unless-stopped
     ports:
-      - "19222:19222"
+      # Loopback on purpose. The host's pairing endpoint (/channel) authenticates
+      # by handshake rather than a bearer token, and /health is an open network
+      # fingerprint: publishing 19222 on 0.0.0.0 hands both to everyone on the
+      # LAN. Keep the default local, where the Web client on this machine uses
+      # http://127.0.0.1:19222.
+      #
+      # A phone on the same LAN or on Tailscale needs the port published on the
+      # host's own address AND that address announced — the container's address
+      # (172.x.x.x) is useless to a phone:
+      #
+      #   ports: ["0.0.0.0:19222:19222"]
+      #   environment: ["CODYNC_EXTERNAL_URL=http://<host-lan-ip>:19222"]
+      #
+      # Never point CODYNC_EXTERNAL_URL at 127.0.0.1: the value travels to the
+      # device, where 127.0.0.1 means the device itself.
+      - "127.0.0.1:19222:19222"
     volumes:
       - codync-data:/home/codync/.codync
 

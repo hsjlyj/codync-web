@@ -7,7 +7,7 @@
 #
 #   docker build -f web/Dockerfile -t <namespace>/codync-web .
 
-FROM node:22-bookworm-slim AS build
+FROM node:22-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da AS build
 
 WORKDIR /app
 
@@ -18,7 +18,7 @@ RUN npm ci
 COPY web/ ./
 RUN npm run build
 
-FROM nginx:1.27-alpine AS runtime
+FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10 AS runtime
 
 # Every exported route is its own .html file, so the server has to try
 # `$uri.html` before giving up — the stock nginx config would 404 on /client.
