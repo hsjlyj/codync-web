@@ -9,8 +9,10 @@ name: docker images
 # GHCR needs no credentials at all: the run authenticates with the built-in
 # GITHUB_TOKEN under the `packages: write` permission declared below, so this is
 # the path that produces a publicly verifiable manifest without asking the user
-# for anything. Note that a package pushed for the first time is *private*; its
-# visibility is a repository setting and has to be switched to Public by hand.
+# for anything. A package's visibility follows its repository's: this repository
+# is public, and both packages were verified answering anonymous pulls with
+# HTTP 200 (2026-11-05). A private repository would produce private packages,
+# switchable under the package's own settings.
 #
 # Docker Hub is published in addition to GHCR when both repository secrets are
 # present:
