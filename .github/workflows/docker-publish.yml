@@ -240,15 +240,26 @@ jobs:
           # peer is the bridge gateway rather than 127.0.0.1, so a request that
           # carries the real token still has to be refused. The token is read
           # from the daemon and never echoed.
+          #
+          # The method has to be the real one: the router rejects a wrong method
+          # with 405 before the token is ever looked at, so a GET here proves
+          # nothing about the boundary (it did exactly that on run 41959217682).
+          # /api/hello exists (host.rs:58) and takes no body — the token is
+          # checked before the body is read (http.rs:131-141).
+          #
+          # Passing this gate is what proves the peer is not loopback. A 200
+          # here would be a real finding — the published port handing the host
+          # API to anyone who connects — and must never be "fixed" by relaxing
+          # the assertion.
           token="$(docker exec "$container" codync-host info --json \
             | tr -d ' \n' | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
           if [ -z "$token" ]; then
             echo "::error::could not read a token from the running daemon"
             exit 1
           fi
-          code="$(curl -s -o /dev/null -w '%{http_code}' \
-            -H "Authorization: Bearer $token" http://127.0.0.1:19222/api/info)"
-          echo "GET /api/info from outside the container, with the real token -> $code"
+          code="$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $token" http://127.0.0.1:19222/api/hello)"
+          echo "POST /api/hello from outside the container, with the real token -> $code"
           [ "$code" = "401" ]
 
           echo "host image serves 19222 as a main build"
