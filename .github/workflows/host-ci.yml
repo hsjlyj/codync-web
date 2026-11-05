@@ -1,0 +1,58 @@
+name: host CI
+
+# Verifies the Rust host compiles and its tests pass. The host is a Cargo
+# workspace (root crate + crates/memory + crates/network); the toolchain comes
+# from host/rust-toolchain.toml. This is verification only — it ships nothing.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ci/host-verify
+      - feat/web-client
+    paths:
+      - "host/**"
+      - ".github/workflows/host-ci.yml"
+
+concurrency:
+  group: host-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host:
+    name: fmt + check + test + clippy
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: host
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (from host/rust-toolchain.toml)
+        run: |
+          rustup show
+          cargo --version
+          rustc --version
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host
+
+      - name: System dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends cmake pkg-config libssl-dev
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Compile check (workspace, all targets)
+        run: cargo check --workspace --all-targets
+
+      - name: Tests
+        run: cargo test --workspace
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
