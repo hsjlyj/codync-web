@@ -27,7 +27,7 @@ jobs:
       run:
         working-directory: host
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain (from host/rust-toolchain.toml)
         run: |
@@ -40,10 +40,16 @@ jobs:
         with:
           workspaces: host
 
-      - name: System dependencies
+      # The runner image ships cmake, pkg-config and build-essential already.
+      # Its extra apt sources can 403 (packages.microsoft.com), so this step
+      # must never block the build: install best effort, then let cargo report
+      # anything genuinely missing.
+      - name: System dependencies (best effort)
+        continue-on-error: true
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends cmake pkg-config libssl-dev
+          sudo rm -f /etc/apt/sources.list.d/*microsoft*.list || true
+          sudo apt-get update -qq || true
+          sudo apt-get install -y -qq --no-install-recommends cmake pkg-config libssl-dev || true
 
       - name: Format check
         run: cargo fmt --all -- --check
