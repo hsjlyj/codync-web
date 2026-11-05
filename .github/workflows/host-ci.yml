@@ -8,8 +8,13 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - ci/host-verify
+      - main
       - feat/web-client
+      - ci/host-verify
+    paths:
+      - "host/**"
+      - ".github/workflows/host-ci.yml"
+  pull_request:
     paths:
       - "host/**"
       - ".github/workflows/host-ci.yml"
