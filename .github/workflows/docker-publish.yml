@@ -1,0 +1,159 @@
+name: docker images
+
+# Builds the two images and — when Docker Hub credentials exist — publishes them:
+#
+#   docker.io/<DOCKERHUB_USERNAME>/codync-host
+#   docker.io/<DOCKERHUB_USERNAME>/codync-web
+#
+# Two repository secrets enable publishing:
+#   DOCKERHUB_USERNAME  the account or organization
+#   DOCKERHUB_TOKEN     an access token with Read & Write
+#
+# Without them the workflow still builds both images and smoke-tests them; it
+# only skips the push, so the Dockerfiles stay verifiable before credentials
+# are in place.
+
+on:
+  workflow_dispatch:
+    inputs:
+      push:
+        description: "Publish to Docker Hub (needs the DOCKERHUB_* secrets)"
+        type: boolean
+        default: true
+  push:
+    branches:
+      - ci/docker-images
+      - 'verify/**'
+    tags:
+      - "v*"
+
+concurrency:
+  group: docker-images-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  images:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: host
+            dockerfile: host/Dockerfile
+            repository: codync-host
+          - name: web
+            dockerfile: web/Dockerfile
+            repository: codync-web
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Decide the image name and whether this run publishes
+        id: mode
+        env:
+          HUB_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          HUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          REQUESTED: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
+        run: |
+          if [ -n "$HUB_USER" ] && [ -n "$HUB_TOKEN" ] && [ "$REQUESTED" = "true" ]; then
+            {
+              echo "push=true"
+              echo "images=$HUB_USER/${{ matrix.repository }}"
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "push=false"
+              echo "images=local/${{ matrix.repository }}"
+            } >> "$GITHUB_OUTPUT"
+            echo "::warning::Not publishing (no Docker Hub credentials, or push was turned off) — building and smoke-testing locally."
+          fi
+
+      - name: Log in to Docker Hub
+        if: steps.mode.outputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.mode.outputs.images }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=branch
+            type=sha,format=short
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      # load is what makes the image available to the smoke tests below; it
+      # works together with push for a single-platform build. Adding a second
+      # platform would mean pulling the pushed tag instead of loading it.
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: ${{ steps.mode.outputs.push == 'true' }}
+          load: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+      - name: Pull the pushed tag back from the registry
+        if: steps.mode.outputs.push == 'true'
+        run: |
+          set -euo pipefail
+          image="$(echo "${{ steps.meta.outputs.tags }}" | head -1)"
+          docker pull "$image"
+          echo "pulled $image"
+
+      - name: Smoke test (host)
+        if: matrix.name == 'host'
+        run: |
+          set -euo pipefail
+          image="$(echo "${{ steps.meta.outputs.tags }}" | head -1)"
+          echo "image: $image"
+
+          # The binary starts and reports its version: catches a broken link.
+          docker run --rm "$image" --version
+
+          # `serve` must come up and stay up on the API port.
+          container="$(docker run -d -p 19222:19222 "$image")"
+          trap 'docker rm -f "$container"' EXIT
+          for _ in $(seq 1 30); do
+            if curl -s -o /dev/null http://localhost:19222/; then break; fi
+            sleep 1
+          done
+          docker logs "$container" | tail -30
+          [ "$(docker inspect -f '{{.State.Running}}' "$container")" = "true" ]
+          echo "host image is serving on 19222"
+
+      - name: Smoke test (web)
+        if: matrix.name == 'web'
+        run: |
+          set -euo pipefail
+          image="$(echo "${{ steps.meta.outputs.tags }}" | head -1)"
+          echo "image: $image"
+
+          docker run --rm "$image" nginx -t
+
+          container="$(docker run -d -p 8080:80 "$image")"
+          trap 'docker rm -f "$container"' EXIT
+          for _ in $(seq 1 20); do
+            if curl -fsS -o /dev/null http://localhost:8080/; then break; fi
+            sleep 1
+          done
+          # The exported routes are files, not directories: this is what proves
+          # web/nginx.conf got the try_files rule right.
+          curl -fsS -o /dev/null -w "GET /        -> %{http_code}\n" http://localhost:8080/
+          curl -fsS -o /dev/null -w "GET /client  -> %{http_code}\n" http://localhost:8080/client

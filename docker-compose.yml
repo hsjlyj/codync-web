@@ -1,0 +1,40 @@
+# Local run of both images.
+#
+#   docker compose up --build          # build from this checkout
+#   CODYNC_IMAGE_NAMESPACE=<you> docker compose up   # use the published images
+#
+# The published layout is the same: <namespace>/codync-host, <namespace>/codync-web.
+#
+# After the containers are up, pair a client from inside the host container —
+# a container has no desktop app, so approving a device is the CLI:
+#
+#   docker compose exec host codync-host access list
+#   docker compose exec host codync-host access approve <requestId>
+
+services:
+  host:
+    build:
+      context: .
+      dockerfile: host/Dockerfile
+    image: ${CODYNC_IMAGE_NAMESPACE:-codync}/codync-host:${CODYNC_IMAGE_TAG:-local}
+    container_name: codync-host
+    restart: unless-stopped
+    ports:
+      - "19222:19222"
+    volumes:
+      - codync-data:/home/codync/.codync
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    image: ${CODYNC_IMAGE_NAMESPACE:-codync}/codync-web:${CODYNC_IMAGE_TAG:-local}
+    container_name: codync-web
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - host
+
+volumes:
+  codync-data:

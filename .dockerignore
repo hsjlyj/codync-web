@@ -1,0 +1,13 @@
+# Build artifacts and dependency trees never belong in the build context.
+**/target
+**/node_modules
+**/.next
+**/out
+.git
+.gitignore
+
+# NOTE: docs/, apps/ and packaging/ must stay in the context even though most of
+# their content is not shipped. The host reads three files at compile time
+# through include_str! — the l10n JSON (apps/ios/Kit/.../Resources/Languages),
+# the crypto test vectors (docs/reference/fixtures) and the update signing key
+# (packaging/updates). Excluding those directories breaks `cargo build`.
