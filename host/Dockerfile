@@ -20,8 +20,10 @@
 #   * cmake is a build-time requirement of aws-lc-rs (TLS); the runtime image
 #     needs ca-certificates, because the host builds a real TLS client for the
 #     cloud on first use.
-#   * `serve` already defaults to --bind 0.0.0.0 --port 19222, which is what a
-#     container wants; the entrypoint spells both out so they read explicitly.
+#   * `serve` defaults to --bind 0.0.0.0, and the port comes from the
+#     compiled-in Environment::port() — 19222 for a Main build. The entrypoint
+#     spells out the bind but deliberately leaves the port alone, so a wrong
+#     build fails loudly; see the first note above.
 #   * Do NOT run `codync-host install` in this image. Self-updating is gated on
 #     a systemd unit, so it stays inert here, and replacing the binary would
 #     break the image contract — upgrade by running a newer tag.
