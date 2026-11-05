@@ -11,6 +11,9 @@ on:
       - main
       - feat/web-client
       - ci/host-verify
+      # Quoted on purpose: a glob with `*` is safer quoted, and this branch is
+      # where a pre-push verification of the final tip runs.
+      - 'verify/**'
     paths:
       - "host/**"
       - ".github/workflows/host-ci.yml"
