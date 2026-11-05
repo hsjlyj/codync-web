@@ -127,16 +127,26 @@ jobs:
           # The binary starts and reports its version: catches a broken link.
           docker run --rm "$image" --version
 
-          # `serve` must come up and stay up on the API port.
           container="$(docker run -d -p 19222:19222 "$image")"
           trap 'docker rm -f "$container"' EXIT
           for _ in $(seq 1 30); do
-            if curl -s -o /dev/null http://localhost:19222/; then break; fi
+            if curl -fsS -o /dev/null http://127.0.0.1:19222/health; then break; fi
             sleep 1
           done
           docker logs "$container" | tail -30
           [ "$(docker inspect -f '{{.State.Running}}' "$container")" = "true" ]
-          echo "host image is serving on 19222"
+
+          # Gate 1 — the listening port is compiled in (Environment::port()),
+          # so the startup line is where a Dev build shows up as 19223.
+          docker logs "$container" 2>&1 | grep -q "codync-host listening"
+
+          # Gate 2 — /health is the one runtime surface of the compile-time
+          # CODYNC_ENV, and it needs no token. A Dev build would answer "dev".
+          health="$(curl -fsS http://127.0.0.1:19222/health)"
+          echo "GET /health -> $health"
+          echo "$health" | grep -qiE '"environment"[[:space:]]*:[[:space:]]*"main"'
+
+          echo "host image serves 19222 as a main build"
 
       - name: Smoke test (web)
         if: matrix.name == 'web'
