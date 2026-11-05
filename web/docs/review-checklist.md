@@ -186,3 +186,69 @@ Phase 3 引入三类浏览器重资源，**资源清理是 [BLOCK] 级检查项*
 | 无 any / 日志泄露 | ✅ | 7 个新文件 grep `as any\|console.log` 零命中 |
 | 文件行数 | ✅ | 最大 screen-view.ts 230 行，全部 <500 |
 | /screen-candidates 路由 | ✅ | parseStreamPath :504-505 已支持，sub=`screenCandidates` |
+
+### 仓库精简与引用修正审查 — `55a4c96`（3584→586 文件）+ `22a4105`（2026-11-05）
+
+**结论：无 [BLOCK]，可推送。** 取舍依据成立：编译期依赖零缺失、保留集最小且必要、门禁全绿。待改 4 项，均为 [SUGGESTION]。
+
+**审查前提（记录在案）**：审查时共享工作树停在 `ci/host-verify`（= `feat/web-client` + 新增 `.github/workflows/host-ci.yml`，不在 `web/` 下、不影响构建）。已确认 `55a4c96`、`22a4105` 均为 `feat/web-client` 的祖先，两树差异仅该 workflow 文件，故门禁结论对 `feat/web-client` 同样成立。
+
+#### Q1 编译/构建依赖面 —— 8 类穷举，无一处伤到
+
+| 依赖形式 | 结果 |
+|---|---|
+| `include_str!`/`include_bytes!` | 全仓 16 处，按「相对该文件所在目录」逐条解析 → **16/16 存在、0 缺失** |
+| `build.rs` / `.cargo/config` / `include!` / `doc=include_str!` | **0 个** |
+| Cargo `path` 依赖 / workspace members | 仅 `crates/memory`、`crates/network`，**均在**；仓库根无 workspace `Cargo.toml` |
+| `#[path = ...]`（10 处） | 全部指向 `host/` 内既有文件，无一指向被删目录 |
+| 运行期 `std::fs` 读仓库内文件 | **无**（host/src 下为 `:memory:` 或 `data_dir()`，无仓库相对路径） |
+| `env!("CARGO_MANIFEST_DIR")`（24 处） | 全部指向 `host/tests/` 下既有 fixture（`fake_agent.py`、`tests/fixtures/*.py`、`wire-shape.json` 均在） |
+| 编译期目录宏（`sqlx::migrate!`/`include_dir!`/`rust-embed`/`cc::build`/`tonic_build`） | **均为 0** → 无迁移目录、无嵌入目录依赖 |
+| 宿主调外部脚本（`python3`/`node`/`bash`） | host/src 内为 **0** → 不依赖被删的 `packaging/*.py`、`tools/` |
+
+另：全部 `.rs` 都在 `host/` 下（`git ls-files '*.rs'` 反查为空）。
+
+**最易踩空处单独验**：`host/tests/e2e.rs:12` 用 `#[path = "../src/remote/crypto.rs"]` 把 crypto.rs 收进测试，其 `include_str!("../../../docs/reference/fixtures/remote-relay-vectors.json")` 仍按**文件真实位置**解析到保留文件 → 保留正确。
+
+#### Q2 保留集最小且必要 —— 成立
+- 语言 json：`git ls-tree 55a4c96^` 计 **9**，删后 **9**，9 个全部被 `l10n.rs:81-121` 逐个引用 → **最小且必要，无冗余混入**
+- `packaging/`：**13→1**，仅剩被 `release.rs:12` 引用的公钥
+- `docs/reference/fixtures/`：**3→3**。仅 `.json` 是编译依赖（`crypto.rs:333`）；`.py` 实测在隔离 venv 中可重建出**逐字节相同**的 `.json`（6462 B）→ 可复算 fixture，保留合理
+- `.github/FUNDING.yml` 仍在（workflows 已删），无害
+
+#### Q3 引用修正不彻底 —— 同类残留 38 处（`22a4105` 只覆盖 `apps/desktop` 一类 6 处）
+
+- **3 条断裂 markdown 链接**（脚本全仓复跑：28 份 md、65 条相对链接、**3 条断**）：`SECURITY.md:29 → private-relay/README.md`、`TRADEMARK.md → cloud/`、`docs/reference/fixtures/README.md → ../remote-relay.md`
+- **34 处 `host/` 内注释**（28 个文件）：`docs/plans/require-sign-in.md` 7、`docs/design/bot-memory.md` 6、`docs/reference/compatibility.md` 5、`docs/reference/{remote-relay,analytics-events}.md` 各 2、`docs/plans/voice-architecture.md` 2、`docs/architecture/connections.md` 2、`packaging/cua-driver/*` 3、`cloud/src/*` 2、`apps/{desktop,screen-linux}` 2、`private-relay/` 1
+- **1 处非 host**：`web/eslint.config.mjs:16` 的 `"public/demo/**"` 已失效
+- 定性：34 处**全为注释/文档，无一处参与编译或运行**（逐条确认不在 `include_str!`、不在路径常量）。本机无 cargo → 属**「读代码确认」非「编译确认」**；但 rustdoc 默认不对 markdown 文件链接报错，`cargo build/test` 亦不检查 → **不构成编译风险，全为 [SUGGESTION]**
+- `host/rust-toolchain.toml:2-3` 特殊：它是**已不可执行的维护指令**（「与 `apps/screen-linux/rust-toolchain.toml` 保持一致」「改两个、跑两个」），现仅存一个 toolchain 文件 → 比断链更该改
+
+#### Q4 门禁 —— 本审查亲跑，未引用他人数字
+```
+npx tsc --noEmit   → exit 0
+npx vitest run     → Test Files 16 passed / Tests 95 passed / exit 0（27.50s）
+npx next build     → exit 0，Generating static pages (13/13)，11 条路由全 Static
+```
+`web/` 下 md：**20 份、0 断链**。若光报「21 份」的差异已查明：删前确为 **21** 份（多一份 `web/README.md`，被本提交删除），删后 20 份仍 0 断链 → 结论成立，数字应为 20。
+
+#### 建议（按性价比，均不阻塞推送）
+1. [SUGGESTION] 修 3 条断裂链接（`SECURITY.md`/`TRADEMARK.md` 会被外部看到）
+2. [SUGGESTION] 改 `host/rust-toolchain.toml:2-3` 两行注释
+3. [SUGGESTION] 其余 30 处同类注释可批量后置
+4. [SUGGESTION] 删 `web/eslint.config.mjs:16` 失效 ignore
+
+### `host CI` 工作流审查（`ci/host-verify`，`37580ab`）（2026-11-05）
+
+**结论：可以留作常驻门禁；与「最小仓库」原则不冲突。** 当前形态 3 项待补、2 项硬化建议。
+
+**不冲突的理由**：精简的原则不是「文件少」，而是「每一项保留必须在当前仓库里有可执行的作用」。该工作流是**本机无 cargo 情况下唯一可持续验证 host 编译**的机制，而 host 是本次保留的两大组件之一。原始删除是**按目录整删**，host CI 恰是该目录里唯一有用项 → 「留一个」不是破例，是修正按目录粗删。
+
+**留得住的三个条件**：① 只此一个、纯验证不发布 —— **已核**：无 `secrets.*`、无 upload、无 release、无 token，文件第 5 行自述 "verification only — it ships nothing" 为真；② 不得把 `packaging/`、`tools/` 带回来 —— **已核**：仅 `rustup` + 四步 cargo，未引用任何被删脚本；③ **待补**：`main` + `pull_request` 触发。
+
+- **[SUGGESTION] `branches:` 缺 `main` 与 `pull_request`**（浮生已认领）。精确事实：仓库**默认分支是 `feat/web-client`**（GitHub API 核实），`main` 落后 77 个提交且非默认 → 现有过滤覆盖了当前开发主线，`main` 只在成为发布分支时才必需。另：若日后设为 **required status check**，`paths:` 过滤会使仅改 `web/**` 的 PR 不产生该检查，需一并处理，否则可能卡住合并。
+- **[SUGGESTION] 环境步骤改 best-effort 后缺正向断言**：`continue-on-error: true` + 全链 `|| true`（:47-52）会让「真缺包」静默通过，错误推迟到 cargo 阶段且更难读。建议加 `command -v cmake`、`pkg-config --exists openssl` 断言，让环境问题在环境步骤亮红。
+- **[SUGGESTION] 未声明 `python3` 依赖**：`cargo test --workspace` 的 e2e 用 `python3` 跑 `tests/fake_agent.py` 等（`host/tests/common/mod.rs:90`、`:95-100`），环境步骤只装 cmake/pkg-config/libssl-dev。ubuntu-latest 自带 python3 故现在能过，作为常驻门禁建议显式断言 `python3 --version`。
+- **[SUGGESTION] 第三方 action 建议按 SHA 固定**：`Swatinem/rust-cache@v2` 按 tag 固定；公开仓库无 secrets、风险低，硬化惯例是固定 commit SHA。
+
+**未验证（如实标注）**：Rust 编译与 `cargo fmt/check/test/clippy`（本机无 cargo，交由 `ci/host-verify` 在 GitHub runner 上验）；`remote-relay-vectors.py` 无法用系统 Python 跑（PEP 668 externally-managed），改用 `/tmp/vvenv` 隔离 venv 才验成逐字节一致。
