@@ -14,7 +14,7 @@ grant rights to the Codync name or logo, or access to the Codync Cloud service.
 
 Codync Cloud (accounts, the relay at `api.codync.dev`, push notifications, remote-screen relay)
 is free for personal use: your own computers and devices. Hosted, resold or multi-tenant services
-must run their own (source in [`cloud/`](cloud/), point hosts at it with `CODYNC_CLOUD_URL`).
+must run their own (source in the [upstream repository](https://github.com/leepokai/Codync), point hosts at it with `CODYNC_CLOUD_URL`).
 Computers or accounts that break this are blocked. Full terms: <https://codync.dev/terms>.
 
 Questions or permission requests: email <kevin@codync.dev> or open an issue at <https://github.com/leepokai/Codync/issues>.

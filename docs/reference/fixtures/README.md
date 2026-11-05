@@ -13,8 +13,7 @@ cmp docs/reference/fixtures/remote-relay-vectors.json /tmp/codync-relay-vectors.
 
 Consumers:
 
-- `host/src/remote/crypto.rs` (`include_str!`)
-- `apps/ios/Kit/Tests/CodyncKitTests/RelayVectorsTests.swift`
-- `cloud/test/vectors.test.ts` and `cloud/test/relay.test.ts`
+- `host/src/remote/crypto.rs` (`include_str!`) — the only consumer in this repository
+- Upstream only (removed here): `apps/ios/Kit/Tests/CodyncKitTests/RelayVectorsTests.swift`, `cloud/test/vectors.test.ts` and `cloud/test/relay.test.ts`
 
-When moving or changing a fixture, update those paths and the cloud, iOS Kit (`kit.yml`) and host CI path filters. Run the affected vector tests; a Markdown link check alone cannot validate executable imports. [Protocol reference](../remote-relay.md).
+When moving or changing a fixture, update those paths and the host CI path filters. Run the affected vector tests; a Markdown link check alone cannot validate executable imports. The protocol reference lives in the upstream repository: [leepokai/Codync](https://github.com/leepokai/Codync), `docs/reference/remote-relay.md`.
