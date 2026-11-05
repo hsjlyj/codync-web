@@ -42,6 +42,12 @@ services:
       #
       # Never point CODYNC_EXTERNAL_URL at 127.0.0.1: the value travels to the
       # device, where 127.0.0.1 means the device itself.
+      #
+      # network_mode: host is the zero-configuration alternative — the host
+      # then sees the machine's real interfaces. Inside a bridge container
+      # there is no tailscale0 and no tailscale CLI, so address detection has
+      # nothing useful to find, which is why announcing the address above is
+      # the price of not using host networking.
       - "127.0.0.1:19222:19222"
     volumes:
       - codync-data:/home/codync/.codync
