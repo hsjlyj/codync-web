@@ -164,7 +164,7 @@ mod tests {
         let t = theme();
         note(text.to_owned(), 52, t.text.patch(t.panel))
             .iter()
-            .map(|l| l.to_string())
+            .map(ToString::to_string)
             .filter(|l| !l.trim().is_empty())
             .collect()
     }
