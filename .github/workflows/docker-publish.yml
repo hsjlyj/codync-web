@@ -178,17 +178,33 @@ jobs:
           # The binary starts and reports its version: catches a broken link.
           docker run --rm "$image" --version
 
-          container="$(docker run -d -p 19222:19222 "$image")"
+          # CODYNC_CLOUD=off stops the smoke test from registering a throwaway
+          # computer with the production cloud on every CI run
+          # (remote/cloud_url.rs:57; the log line is `registered with the Codync
+          # cloud`). A named volume is used from the first run because surviving
+          # the loss of the container is exactly what docker-compose.yml
+          # promises for codync-data.
+          start() {
+            docker run -d -p 19222:19222 -e CODYNC_CLOUD=off \
+              -v codync-smoke:/home/codync/.codync "$image"
+          }
+          wait_ready() {
+            # Readiness, not connectivity: the kernel accepts the TCP connection
+            # into the backlog long before axum::serve answers (the bind is at
+            # main.rs:512, serving starts at :537, with the token, the store and
+            # network::start in between). Poll /health for a real HTTP 200, and
+            # cap each request so a half-open socket cannot hang the loop.
+            for _ in $(seq 1 30); do
+              if curl -fsS --max-time 3 -o /dev/null http://127.0.0.1:19222/health; then return 0; fi
+              sleep 1
+            done
+            echo "::error::the daemon never answered /health with 200"
+            return 1
+          }
+
+          container="$(start)"
           trap 'docker rm -f "$container"' EXIT
-          # Readiness, not connectivity: the kernel accepts the TCP connection
-          # into the backlog long before axum::serve answers (the bind is at
-          # main.rs:512, serving starts at :537, with the token, the store and
-          # network::start in between). Poll /health for a real HTTP 200, and
-          # cap each request so a half-open socket cannot hang the loop.
-          for _ in $(seq 1 30); do
-            if curl -fsS --max-time 3 -o /dev/null http://127.0.0.1:19222/health; then break; fi
-            sleep 1
-          done
+          wait_ready
           docker logs "$container" | tail -30
           [ "$(docker inspect -f '{{.State.Running}}' "$container")" = "true" ]
 
@@ -204,6 +220,36 @@ jobs:
           health="$(curl -fsS http://127.0.0.1:19222/health)"
           echo "GET /health -> $health"
           echo "$health" | grep -qiE '"environment"[[:space:]]*:[[:space:]]*"main"'
+
+          # Boundary A — the named volume has to outlive the container.
+          host_id="$(echo "$health" | sed -n 's/.*"hostId":"\([^"]*\)".*/\1/p')"
+          if [ -z "$host_id" ]; then
+            echo "::error::no hostId in the /health payload"
+            exit 1
+          fi
+          docker rm -f "$container"
+          container="$(start)"
+          wait_ready
+          again="$(curl -fsS http://127.0.0.1:19222/health | sed -n 's/.*"hostId":"\([^"]*\)".*/\1/p')"
+          echo "hostId after rebuilding the container -> $again (was $host_id)"
+          [ "$again" = "$host_id" ]
+
+          # Boundary B — publishing 19222 must not hand the host API to the
+          # network: /health is open by design, while /api/{method} is loopback
+          # plus a token (api/http.rs:64,139). Behind the published port the
+          # peer is the bridge gateway rather than 127.0.0.1, so a request that
+          # carries the real token still has to be refused. The token is read
+          # from the daemon and never echoed.
+          token="$(docker exec "$container" codync-host info --json \
+            | tr -d ' \n' | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
+          if [ -z "$token" ]; then
+            echo "::error::could not read a token from the running daemon"
+            exit 1
+          fi
+          code="$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $token" http://127.0.0.1:19222/api/info)"
+          echo "GET /api/info from outside the container, with the real token -> $code"
+          [ "$code" = "401" ]
 
           echo "host image serves 19222 as a main build"
 
@@ -226,3 +272,11 @@ jobs:
           # web/nginx.conf got the try_files rule right.
           curl -fsS -o /dev/null -w "GET /        -> %{http_code}\n" http://localhost:8080/
           curl -fsS -o /dev/null -w "GET /client  -> %{http_code}\n" http://localhost:8080/client
+          # A nested route the export really contains, on top of /client.
+          curl -fsS -o /dev/null -w "GET /client/chat -> %{http_code}\n" http://localhost:8080/client/chat
+
+          # Negative case: the catch-all must not turn a typo into a 200 index
+          # page, which would make every missing route look like a working one.
+          missing="$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/no-such-route)"
+          echo "GET /no-such-route -> $missing"
+          [ "$missing" = "404" ]
