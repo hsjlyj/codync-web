@@ -189,6 +189,20 @@ docker run -d --name codync-host \
   codync-host:local
 ```
 
+**不想自己构建**就用发布镜像。两个包用同一个版本号标签发布到 GHCR，当前稳定版是 **`2.38.0`**：
+
+```bash
+docker pull ghcr.io/hsjlyj/codync-host:2.38.0
+docker run -d --name codync-host \
+  -p 127.0.0.1:19222:19222 \
+  -v codync-data:/home/codync/.codync \
+  ghcr.io/hsjlyj/codync-host:2.38.0
+```
+
+`docker run` 那几个参数与上面本地构建那条**逐字相同**，只是把镜像名换成了发布镜像——本节下面关于端口、数据目录、属主、CLI、边界的说明对两种来源都成立。**钉住版本号，不要用 `latest`**：`latest` 每发一版都会移动，钉住版本号才可复现。
+
+> 发布镜像只有 `linux/amd64`（registry index 里另一项 `unknown/unknown` 是 buildx 的 attestation 清单，不是第二个架构）。arm64 机器上会以模拟方式运行，本仓库未实测。
+
 | 事项 | 值 |
 |------|-----|
 | 监听端口 | **19222**（编译期决定，见本节末） |
@@ -239,11 +253,29 @@ docker exec -T codync-host codync-host pair
 `host/Dockerfile` 的构建阶段设了 `ENV CODYNC_ENV=main`，并且**有意不在 `CMD` 里写 `--port`**：端口取自编译期默认值，构建错了就以「端口对不上」的方式响亮失败，而不是静默跑去连 dev 云。两道自查门：
 
 ```bash
-docker logs codync-host | grep -F "codync-host listening"   # 这一行带有实际监听的端口
-curl -fsS http://127.0.0.1:19222/health                     # "environment" 应为 "main"
+docker logs codync-host | grep -F "codync-host listening"
+# 2026-11-05T03:01:31.379803Z  INFO codync_host: codync-host listening version="2.38.0" bind="0.0.0.0" port=19222
+
+curl -fsS http://127.0.0.1:19222/health
+# {"ok":true,"hostId":"…","computerId":"…","version":"2.38.0","environment":"main"}
 ```
 
+两行都是 CI 上的实测输出（主键值已替换为占位符）：`message` 在前、字段在后，`port=19222` 是数字字段不带引号；`environment` 是 /health 里的第四项。
+
 `/health` 不需要 token，而且是这个编译期常量在运行时唯一的对外出口。看不到那行日志时先看有没有设 `RUST_LOG`：默认级别是 `codync_host=info`，设了更窄的规则就会把它滤掉。
+
+**首次启动的日志里有两行看着像故障、其实不是**（同样取自 CI 实测，值已替换为占位符）：
+
+```
+WARN codync_host::agent::new_bot: credential store unavailable; new bot starts without connectors
+INFO codync_host::chat::lead: made the lead bot bot="…"
+```
+
+前者是容器里没有系统钥匙串的正常结果（新建的 bot 不带连接器），后者是首次启动**自动创建 lead bot**。都不是错误。
+
+**另一条与容器无关、但第一次跑会看到的行为**：云端处于开启状态（默认）时，主机启动会把这台电脑注册到编译期配置的云地址——Main 构建即 `api.codync.dev`（`POST /v1/host/register`：boxKey、主机名、平台、device、版本，**不需要账号**），日志里对应 `registered with the Codync cloud`。
+
+**别为了「让日志干净」顺手把它关掉**：运行时开关 `CODYNC_CLOUD=off` 确实存在、优先级也最高，但**默认配方（只发布回环）下手机端的接入正是靠云**，关掉等于砍掉那条路。要完全离线，按下面边界清单里的做法显式发布端口并通告地址。
 
 **这套配方的边界**：
 
@@ -254,7 +286,13 @@ curl -fsS http://127.0.0.1:19222/health                     # "environment" 应�
 两端一起启动用仓库根的 `docker-compose.yml`（主机端默认发布同样是 `127.0.0.1:19222:19222`）：
 
 ```bash
+# 从当前检出的代码本地构建
 docker compose up --build
+
+# 用发布镜像：命名空间必须带 registry 主机名，--no-build 不能省
+# （两个服务都留着 build: 段，裸 up 会回头在本地重建）
+CODYNC_IMAGE_NAMESPACE=ghcr.io/hsjlyj CODYNC_IMAGE_TAG=2.38.0 \
+  docker compose up --no-build
 ```
 
 ---
@@ -428,6 +466,15 @@ docker build -f web/Dockerfile -t codync-web:local .
 docker run -d --name codync-web -p 8080:80 codync-web:local
 ```
 
+**不想自己构建**就用发布镜像（与主机端同版本发布）：
+
+```bash
+docker pull ghcr.io/hsjlyj/codync-web:2.38.0
+docker run -d --name codync-web -p 8080:80 ghcr.io/hsjlyj/codync-web:2.38.0
+```
+
+与主机端一样只有 `linux/amd64`，同样**钉住版本号别用 `latest`**。
+
 起来后打开 <http://127.0.0.1:8080>。容器内监听 80，里面**没有可写状态**，也不需要挂载任何卷。
 
 - **必须挂在站点根路径**：页面资源走绝对路径 `/_next/...`（`web/next.config.ts` 没有设 `basePath`），挂到子目录（如 `/codync/`）资源会全部 404
@@ -437,7 +484,7 @@ docker run -d --name codync-web -p 8080:80 codync-web:local
 
 > 本节关于浏览器行为的判断（混合内容、安全上下文、`crypto.subtle`）依据浏览器规则，未在本环境实测。
 
-两端一起启动见 1.6 末尾的 `docker compose up --build`。
+两端一起启动见 1.6 末尾：本地构建用 `docker compose up --build`，改用发布镜像就换成 `CODYNC_IMAGE_NAMESPACE=ghcr.io/hsjlyj CODYNC_IMAGE_TAG=2.38.0 docker compose up --no-build`。
 
 ---
 
