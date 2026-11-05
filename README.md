@@ -189,7 +189,7 @@ docker run -d --name codync-host \
   codync-host:local
 ```
 
-**不想自己构建**就用发布镜像。两个包用同一个版本号标签发布到 GHCR，当前稳定版是 **`2.38.0`**：
+**不想自己构建**就用发布镜像。两个包用同一个版本号标签发布到 GHCR（**主源**），当前稳定版是 **`2.38.0`**：
 
 ```bash
 docker pull ghcr.io/hsjlyj/codync-host:2.38.0
@@ -202,6 +202,20 @@ docker run -d --name codync-host \
 `docker run` 那几个参数与上面本地构建那条**逐字相同**，只是把镜像名换成了发布镜像——本节下面关于端口、数据目录、属主、CLI、边界的说明对两种来源都成立。**钉住版本号，不要用 `latest`**：`latest` 每发一版都会移动，钉住版本号才可复现。
 
 > 发布镜像只有 `linux/amd64`（registry index 里另一项 `unknown/unknown` 是 buildx 的 attestation 清单，不是第二个架构）。arm64 机器上会以模拟方式运行，本仓库未实测。
+
+**备选源：Docker Hub**（与 GHCR 一起发布的**同一版本**，匿名可拉）：
+
+```bash
+docker pull fengsanle/codync-host:2.38.0
+```
+
+镜像名里不带 registry 主机名就落在 Docker Hub（`docker.io` 是默认源，写 `docker.io/fengsanle/…` 等价），所以上面那条 `docker run` 只需换个镜像名，参数一字不动。套用 compose 时同理，把命名空间整个换成 `fengsanle`：
+
+```bash
+CODYNC_IMAGE_NAMESPACE=fengsanle CODYNC_IMAGE_TAG=2.38.0 docker compose up --no-build
+```
+
+两边的差别只在命名空间怎么写：`ghcr.io/hsjlyj` 必须带主机名（`docker-compose.yml` 的镜像模板里没有主机名），Docker Hub 这版不用写。
 
 | 事项 | 值 |
 |------|-----|
@@ -474,6 +488,8 @@ docker run -d --name codync-web -p 8080:80 ghcr.io/hsjlyj/codync-web:2.38.0
 ```
 
 与主机端一样只有 `linux/amd64`，同样**钉住版本号别用 `latest`**。
+
+**备选源：Docker Hub**——`docker pull fengsanle/codync-web:2.38.0`（命名空间怎么写见 1.6 那条说明）。
 
 起来后打开 <http://127.0.0.1:8080>。容器内监听 80，里面**没有可写状态**，也不需要挂载任何卷。
 
