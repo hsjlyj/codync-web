@@ -42,12 +42,15 @@ impl Channel {
             Ok(account) => account,
             Err(close) => return close,
         };
-        let mut let_in = owner::while_unchanged(&self.hub, || self.let_in(&account, false, code, name, platform));
+        let mut let_in =
+            owner::while_unchanged(&self.hub, || self.let_in(account.as_ref(), false, code, name, platform));
         if matches!(let_in, Err(Kept::Unasked)) {
-            if let Err(close) = self.ask(id, name, platform, account.email.as_deref(), incoming).await {
+            if let Err(close) =
+                self.ask(id, name, platform, account.as_ref().and_then(|a| a.email.as_deref()), incoming).await
+            {
                 return close;
             }
-            let_in = owner::while_unchanged(&self.hub, || self.let_in(&account, true, code, name, platform));
+            let_in = owner::while_unchanged(&self.hub, || self.let_in(account.as_ref(), true, code, name, platform));
         }
         let owner = match let_in {
             Ok(owner) => owner,
@@ -62,16 +65,17 @@ impl Channel {
         crate::analytics::device_paired(&self.hub, crate::analytics::Via::Qr, platform, false);
         let mut ok = json!({"computerId": self.hub.identity.computer_id(), "name": crate::service::host_name()});
         if owner.is_none() {
-            // Joining the phone's account: the computer signs the claim the phone made; the phone, which holds
-            // the account's session, completes it with the cloud.
-            ok["claim"] = self.claim(&b["claim"], &account.user_id).await;
+            // Joining the phone's account: only a cloud-certified device can carry a claim.
+            if let Some(account) = account.as_ref() {
+                ok["claim"] = self.claim(&b["claim"], &account.user_id).await;
+            }
         }
         self.send(json!({"id": id, "ok": ok})).await;
         (close::PAIRED, "paired")
     }
 
     /// Before anything about this computer's account reaches the phone: a live code, then the phone's account.
-    async fn admit(&self, id: u64, b: &Value, code: &str, source: &str) -> Result<Certified, CloseWith> {
+    async fn admit(&self, id: u64, b: &Value, code: &str, source: &str) -> Result<Option<Certified>, CloseWith> {
         if !self.hub.pairing.locked().attempt(source) {
             return Err(self.reject(RejectCode::RateLimited).await);
         }
@@ -79,7 +83,8 @@ impl Channel {
             return Err(self.refuse(id, EXPIRED, "unauthorized").await);
         }
         match certificate::check(&b["certificate"], &self.key, now_ms()) {
-            Ok(account) => Ok(account),
+            Ok(account) => Ok(Some(account)),
+            Err(Refusal::Missing) if owner::owner(&self.hub.store).is_none() => Ok(None),
             Err(Refusal::Missing) => Err(self.reject(RejectCode::UnsupportedVersion).await),
             Err(Refusal::Invalid) => {
                 let message = "Couldn't confirm your Codync account. Sign in again, then scan a new code.";
@@ -94,13 +99,22 @@ impl Channel {
     /// right one, and while the computer asks the relay keeps the offer, and with it this socket.
     fn let_in(
         &self,
-        account: &Certified,
+        account: Option<&Certified>,
         asked: bool,
         code: &str,
         name: &str,
         platform: &str,
     ) -> Result<Option<Owner>, Kept> {
-        let owner = self.owner_for(account).map_err(|message| Kept::Out(message, "otherAccount"))?;
+        let owner = match account {
+            Some(account) => self.owner_for(account).map_err(|message| Kept::Out(message, "otherAccount"))?,
+            None if owner::owner(&self.hub.store).is_some() => {
+                return Err(Kept::Out(
+                    "This computer is in an account. Pair with a signed-in device.".into(),
+                    "otherAccount",
+                ));
+            }
+            None => None,
+        };
         if owner.is_none() && !asked {
             return Err(Kept::Unasked);
         }
@@ -117,7 +131,7 @@ impl Channel {
             lease_until: None,
             created_at: now_ms(),
             last_seen_at: None,
-            account: Some(account.user_id.clone()),
+            account: account.map(|a| a.user_id.clone()),
         };
         if let Err(e) = self.hub.store.put_device(&device) {
             tracing::error!(error = format!("{e:#}"), "couldn't save a paired device");

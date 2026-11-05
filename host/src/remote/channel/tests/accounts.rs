@@ -19,13 +19,39 @@ async fn asked(hub: &Hub, p: &mut Phone, body: Value) -> Value {
 }
 
 #[tokio::test]
-async fn an_app_without_a_certificate_is_told_to_update_and_the_code_stays() {
+async fn an_uncertified_device_on_an_unowned_host_waits_for_local_approval() {
+    let hub = unowned_hub();
+    let (mut p, code) = pairing_phone(&hub).await;
+    p.send(json!({"id": 1, "m": "pair", "b": {"code": code, "name": "Codync Web", "platform": "web"}})).await;
+    timeout(Duration::from_secs(1), async {
+        while hub.pairing_requests.json().is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("an uncertified local device should reach the host approval queue");
+    let request = hub.pairing_requests.json()[0].clone();
+    assert_eq!(request["deviceName"], "Codync Web");
+    let key = p.dk();
+    crate::remote::pairing_requests::decide(&hub, request["requestId"].as_str().unwrap(), true).unwrap();
+    let reply = p.recv().await.unwrap();
+    assert_eq!(reply["ok"]["computerId"], hub.identity.computer_id());
+    assert_eq!(hub.store.device(&key).unwrap().account, None, "local pairing doesn't invent an account");
+    assert!(!hub.pairing.locked().open(), "the code is consumed only after local approval");
+}
+
+#[tokio::test]
+async fn an_uncertified_device_is_rejected_by_an_account_owned_host() {
     let hub = temp_hub();
     let (mut p, code) = pairing_phone(&hub).await;
-    p.send(json!({"id": 1, "m": "pair", "b": {"code": code, "name": "Old app", "platform": "ios"}})).await;
+    p.send(json!({"id": 1, "m": "pair", "b": {"code": code, "name": "Codync Web", "platform": "web"}})).await;
     let (close, reject) = p.recv().await.unwrap_err();
     assert_eq!((close, reject["code"].as_str()), (4400, Some("unsupportedVersion")));
-    assert!(hub.pairing.locked().open(), "the code isn't used up");
+    assert!(hub.pairing.locked().open(), "a rejected request must not consume the code");
+    assert!(
+        hub.pairing_requests.json().is_empty(),
+        "an account-owned host must not ask local approval for uncertified devices"
+    );
 }
 
 #[tokio::test]
