@@ -87,7 +87,7 @@ cargo build --release
 
 产物是 `host/target/release/codync-host`（`host/Cargo.toml:7` 的 `default-run = "codync-host"`）。release profile 开了 `lto = "thin"`、`codegen-units = 1`、`strip = true`（`host/Cargo.toml:107-110`），首次编译偏慢属正常。
 
-> **未在本环境验证**：本仓库当前的开发环境没有 Rust 工具链（`which cargo` 为空），上面这条命令**没有真跑过**。本章的端口、路径、参数默认值均逐条核对过源码，但「能编出来」这件事本身未经实测。仓库内 `.github/workflows/host-ci.yml` 会在 CI 上编译，那是当前唯一的自动验证途径。
+> **未在本环境验证**：本仓库当前的开发环境没有 Rust 工具链（`which cargo` 为空），上面这条命令**没有真跑过**。本章的端口、路径、参数默认值均逐条核对过源码，但「能编出来」这件事本身未经实测。主机端的编译与测试已在 CI 上实跑通过，见 [5.2](#52-主机端自检)。
 
 ### 1.3 运行
 
@@ -431,12 +431,19 @@ Playwright 冒烟（`npm run test:e2e`）需要能启动浏览器的环境，无
 
 ```bash
 cd host
-cargo fmt --check
+cargo fmt --all -- --check
+cargo check --workspace --all-targets
+cargo test --workspace
 cargo clippy --all-targets -- -D warnings
-cargo test
 ```
 
-> **未在本环境验证**：本开发环境无 Rust 工具链，上述三条未执行。`.github/workflows/host-ci.yml` 会在 CI 上跑这些检查。
+> **本环境未跑**：本开发环境无 Rust 工具链，上述命令未在此处执行。**已在 CI 上实跑并全部通过**（run [`41943837866`](https://github.com/hsjlyj/codync-web/actions/runs/41943837866)，2026-11-05，总耗时 9 分 21 秒）：
+> - `cargo fmt --all -- --check` 通过（1s）
+> - `cargo check --workspace --all-targets` 通过（98s，含测试目标）
+> - `cargo test --workspace` 通过（383s）：**885 passed / 0 failed**，27 个测试目标，其中主单元测试 688 个（另 1 ignored）
+> - `cargo clippy --all-targets -- -D warnings` 通过（31s），**0 警告**
+>
+> 该 run 验的是 `ci/host-verify` 分支的提交 `37580ab`，**不是本分支最新的提交**。
 
 ### 5.3 真实配对联调
 
