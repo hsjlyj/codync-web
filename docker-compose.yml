@@ -19,6 +19,13 @@ services:
     image: ${CODYNC_IMAGE_NAMESPACE:-codync}/codync-host:${CODYNC_IMAGE_TAG:-local}
     container_name: codync-host
     restart: unless-stopped
+    environment:
+      # Pinned so the volume below holds the host's state whether the image was
+      # built as a Main build or (by mistake) as a Dev one, which would
+      # otherwise use ~/.codync-dev.
+      - CODYNC_HOME=/home/codync/.codync
+      # No port setting on purpose: the listening port is compiled in, and
+      # leaving it alone is what turns a wrong build into a loud failure.
     ports:
       # Loopback on purpose. The host's pairing endpoint (/channel) authenticates
       # by handshake rather than a bearer token, and /health is an open network

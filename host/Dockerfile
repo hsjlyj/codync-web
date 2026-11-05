@@ -74,4 +74,9 @@ VOLUME ["/home/codync/.codync"]
 EXPOSE 19222
 
 ENTRYPOINT ["codync-host"]
-CMD ["serve", "--bind", "0.0.0.0", "--port", "19222"]
+# No --port on purpose: the default comes from the compiled-in
+# Environment::port(). A build that forgot CODYNC_ENV=main listens on 19223
+# instead of 19222, so the published port reaches nothing and the smoke test
+# fails loudly — rather than the container coming up and quietly talking to the
+# dev cloud with a dev device certificate.
+CMD ["serve", "--bind", "0.0.0.0"]
