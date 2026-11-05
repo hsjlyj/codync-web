@@ -252,3 +252,23 @@ npx next build     → exit 0，Generating static pages (13/13)，11 条路由�
 - **[SUGGESTION] 第三方 action 建议按 SHA 固定**：`Swatinem/rust-cache@v2` 按 tag 固定；公开仓库无 secrets、风险低，硬化惯例是固定 commit SHA。
 
 **未验证（如实标注）**：Rust 编译与 `cargo fmt/check/test/clippy`（本机无 cargo，交由 `ci/host-verify` 在 GitHub runner 上验）；`remote-relay-vectors.py` 无法用系统 Python 跑（PEP 668 externally-managed），改用 `/tmp/vvenv` 隔离 venv 才验成逐字节一致。
+
+### 补充：文档回归的基线对照（`feat/web-client`，2026-11-05）
+
+**目的**：证明「这次精简引入的文档回归**有且只有 3 处，没有第四条**」。
+
+| 参照点 | md 份数 | 相对链接数 | 断链数 |
+|---|---|---|---|
+| `14f0916`（精简前基线） | 145 | 574 | **0** |
+| `feat/web-client`（含 `7229660`：精简 + 引用修正 + 本记录） | 28 | 65 | **3** |
+| 同上、`web/` 子集 | 20 | 40 | **0** |
+
+三条断链全在 `web/` **之外**，与 `22a4105` 未覆盖的同类残留是同一组：`SECURITY.md:29 → private-relay/README.md`、`TRADEMARK.md → cloud/`、`docs/reference/fixtures/README.md → ../remote-relay.md`。
+
+**验收标准**（若光定死）：最终 tip —— 定义是「榫卯 文档修复 + 渡口 主机端修复全部落盘、取完 workflow 之后的那一个 SHA」——必须 **0 断**。链接检查**按 commit 生效**，必须在最终 SHA 上重跑，旧结论不作数。
+
+**方法（可复现）**：`git ls-tree -r --name-only <ref>` 取该 commit 文件集；逐份 `git show <ref>:<path>` 读 markdown；正则 `\[([^\]]*)\]\(([^)\s]+)\)` 取相对链接（跳过 `http(s):`/`#`/`mailto:`/`tel:`）；用 posixpath 按该文件所在目录归一化后，在**同一 commit 的文件集**里判存在（目录链接按前缀判，避免误报）。脚本：按 commit 版 `/tmp/linkcheck_ref.py`、工作区版 `/tmp/linkcheck.py`。
+
+**中间验证（榫卯 尚未提交时的预检）**：其 5 处修复 + README 重写的**工作区**版本 = **28 份 / 68 条 / 0 断**（README 重写新增 3 条链接），`web/` 子集 20 份 / 40 条 / 0 断 → 落盘后即可达标。渡口 的改动只涉及 `host/src/remote/pairing_requests.rs`（`.rs`，非 `.md`），不影响该计数。
+
+**方法学说明**：本次口径与前一轮一致（同一正则、同一跳过规则、同一归一化），因此「0 → 3」这一变化可直接归因于 `55a4c96`，而不是口径变化。旧口径只做「是否存在」判断，未区分目录链接；新口径增加了目录前缀判定，故对 `cloud/` 这类目录链接的判定更严格 —— 复查 `14f0916` 在两种口径下均为 0 断，结论不受影响。
