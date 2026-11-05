@@ -176,11 +176,92 @@ codync://pair?v=3&name=<主机名>&id=<computerId>&sk=<主机签名公钥>&bk=<�
 | `codync-host update [--check \| --status \| --auto on\|off]` | 更新主机 / 查看更新状态 |
 | `codync-host reset-token` | 轮换本机的本地 API token |
 
+
+### 1.6 用 Docker 部署（主机端）
+
+`host/Dockerfile` 把主机端装进一个容器。**构建上下文必须是仓库根目录**（不只是 `host/`）：主机端在编译期用 `include_str!` 读 `apps/`、`docs/reference/fixtures/`、`packaging/updates/` 三处文件，从 `host/` 里构建会失败。
+
+```bash
+docker build -f host/Dockerfile -t codync-host:local .
+docker run -d --name codync-host \
+  -p 127.0.0.1:19222:19222 \
+  -v codync-data:/home/codync/.codync \
+  codync-host:local
+```
+
+| 事项 | 值 |
+|------|-----|
+| 监听端口 | **19222**（编译期决定，见本节末） |
+| 数据目录 | `/home/codync/.codync` |
+| 运行用户 | `codync`，uid **10001**，数据目录权限 **0700**（token 与身份密钥在里面） |
+| 容器内绑定 | `--bind 0.0.0.0` |
+
+容器内必须绑 `0.0.0.0`，否则宿主机的端口映射进不来；**对外暴露到什么范围由 `-p` 的发布地址决定**，上面这条只发布到宿主机回环。
+
+匿名卷、命名卷都能用；**改用宿主机目录做 bind mount 时要先把属主改对**，否则会撞上与镜像无关的同一个权限错误：
+
+```bash
+mkdir -p ~/codync-state
+sudo chown 10001:10001 ~/codync-state && sudo chmod 700 ~/codync-state
+docker run -d --name codync-host -p 127.0.0.1:19222:19222 \
+  -v ~/codync-state:/home/codync/.codync codync-host:local
+```
+
+**CLI 必须在容器里跑**：
+
+```bash
+docker exec codync-host codync-host access list
+docker exec codync-host codync-host access approve <requestId>
+```
+
+两个独立原因：① CLI 打的是 `http://127.0.0.1:<port>/api/<method>`，而 `/api/*` 要求**来源是回环且带 token**——从宿主机经端口映射进来的包源地址是网桥网关，一定被拒；② CLI 还要从**数据目录**里读 `token` 文件，宿主机上没有那份数据。（用 compose 起的话，`docker compose exec host codync-host …` 等价。）
+
+生成配对链接（`-T` 不分配终端，打印后立即返回）：
+
+```bash
+docker exec -T codync-host codync-host pair
+```
+
+把打印出的整条 `codync://pair?...` 链接粘进 Web 端，再用上面的 `access list` / `access approve` 放行。容器里**没有桌面 App**（弹窗放行那条路不存在），放行走 CLI；终端 UI 仍可用：`docker exec -it codync-host codync-host tui`。
+
+> 不加 `-T` 时 `pair` 会留在原地等设备请求，收到请求后问一次 y/N 确认——想在同一个终端里一步做完就用这种，代价是这个终端一直被占着。
+
+**不要在容器里执行 `codync-host install`**：容器里没有 systemd，自升级是惰性的。**升级方式是换一个镜像 tag。**
+
+**`CODYNC_ENV` 是编译期常量。** 主机端的运行环境（Main / Dev）在编译时定死，运行期改不了（`option_env!`，缺省落 Dev）。一个忘了设 `CODYNC_ENV=main` 的镜像**不会报错**，只会「连不上」：
+
+| | Main 构建 | Dev 构建 |
+|---|---|---|
+| 监听端口 | 19222 | 19223 |
+| 数据目录 | `~/.codync` | `~/.codync-dev` |
+| 云地址 / 设备证书公钥 | 生产 | dev |
+
+`host/Dockerfile` 的构建阶段设了 `ENV CODYNC_ENV=main`，并且**有意不在 `CMD` 里写 `--port`**：端口取自编译期默认值，构建错了就以「端口对不上」的方式响亮失败，而不是静默跑去连 dev 云。两道自查门：
+
+```bash
+docker logs codync-host | grep -F "codync-host listening"   # 这一行带有实际监听的端口
+curl -fsS http://127.0.0.1:19222/health                     # "environment" 应为 "main"
+```
+
+`/health` 不需要 token，而且是这个编译期常量在运行时唯一的对外出口。看不到那行日志时先看有没有设 `RUST_LOG`：默认级别是 `codync_host=info`，设了更窄的规则就会把它滤掉。
+
+**这套配方的边界**：
+
+- 默认只发布回环 → 只有**跑容器的这台机器上的浏览器**能连 `http://127.0.0.1:19222`
+- 手机同网段 / Tailscale 直连要**两件事一起做**：把端口发布到宿主的可达地址，并设置 `CODYNC_EXTERNAL_URL=http://<宿主可达地址>:19222`。**不要把它设成 `127.0.0.1`**：这个值会随 `hello` 发给设备，而在设备上 `127.0.0.1` 指的是设备自己
+- `network_mode: host` 才是零配置：bridge 网络里既没有 `tailscale0` 也没有 `tailscale` CLI，地址自动探测找不到有用的东西，所以要手动通告
+
+两端一起启动用仓库根的 `docker-compose.yml`（主机端默认发布同样是 `127.0.0.1:19222:19222`）：
+
+```bash
+docker compose up --build
+```
+
 ---
 
 ## 二、已知限制与安全说明
 
-以下三条来自针对本地配对补丁（`14f0916`）的安全审查结论，如实写在这里。
+以下四条来自针对本地配对补丁（`14f0916`）的安全审查结论，如实写在这里。
 
 ### 1. 无证书配对的设备，权限与有证书设备等价
 
@@ -336,6 +417,27 @@ cf deploy          # 生成 <worker名>.<子域>.workers.dev
 > **本条依据浏览器混合内容规则 + 源码判断，未在本环境实测**——正式选型前请用目标浏览器验证一次。
 
 > 配对与主机放行的完整步骤见下一节；**特别注意 Web 端不显示 6 位核对码**，主机放行要用 `requestId`。
+
+
+### 3.6 用 Docker 部署（Web 端）
+
+`web/Dockerfile` 把静态产物装进一个 nginx 容器。**构建上下文同样必须是仓库根目录**（`COPY web/…` 的路径以仓库根为起点，从 `web/` 里构建会失败）：
+
+```bash
+docker build -f web/Dockerfile -t codync-web:local .
+docker run -d --name codync-web -p 8080:80 codync-web:local
+```
+
+起来后打开 <http://127.0.0.1:8080>。容器内监听 80，里面**没有可写状态**，也不需要挂载任何卷。
+
+- **必须挂在站点根路径**：页面资源走绝对路径 `/_next/...`（`web/next.config.ts` 没有设 `basePath`），挂到子目录（如 `/codync/`）资源会全部 404
+- 静态导出是「一个路由一个 `.html` 文件」，没有 `out/client/index.html`；`web/nginx.conf` 用 `try_files $uri $uri.html $uri/ =404` 兜住，沿用这份配置 `/client` 就不会 404
+
+**连主机**：容器配方的页面是 `http://127.0.0.1:8080`，可以直连 `ws://127.0.0.1:19222`——3.5 那条「HTTPS 页面连不上 `ws://`」的限制在这里**不成立**；而且 `127.0.0.1` 属于浏览器认可的「潜在可信来源」，`crypto.subtle` 可用，不会退化到软件实现。连接页填 `http://127.0.0.1:19222`（主机端按 1.6 跑容器或直接跑本机二进制都可以）。
+
+> 本节关于浏览器行为的判断（混合内容、安全上下文、`crypto.subtle`）依据浏览器规则，未在本环境实测。
+
+两端一起启动见 1.6 末尾的 `docker compose up --build`。
 
 ---
 
