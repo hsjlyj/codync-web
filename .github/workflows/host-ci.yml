@@ -1,0 +1,80 @@
+name: host CI
+
+# Verifies the Rust host compiles and its tests pass. The host is a Cargo
+# workspace (root crate + crates/memory + crates/network); the toolchain comes
+# from host/rust-toolchain.toml. This is verification only — it ships nothing.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - feat/web-client
+      - ci/host-verify
+      # Quoted on purpose: a glob with `*` is safer quoted, and this branch is
+      # where a pre-push verification of the final tip runs.
+      - 'verify/**'
+    paths:
+      - "host/**"
+      - ".github/workflows/host-ci.yml"
+  pull_request:
+    paths:
+      - "host/**"
+      - ".github/workflows/host-ci.yml"
+
+concurrency:
+  group: host-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host:
+    name: fmt + check + test + clippy
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: host
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain (from host/rust-toolchain.toml)
+        run: |
+          rustup show
+          cargo --version
+          rustc --version
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: host
+
+      # The runner image ships cmake, pkg-config and build-essential already.
+      # Its extra apt sources can 403 (packages.microsoft.com), so the install
+      # itself is best effort: the assertions below, not apt, decide whether
+      # this environment can build and test the host.
+      - name: System dependencies (best effort)
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/*microsoft*.list || true
+          sudo apt-get update -qq || true
+          sudo apt-get install -y -qq --no-install-recommends cmake pkg-config libssl-dev || true
+
+      # Fails here, where the reason is readable, instead of deep inside cargo.
+      # cmake: aws-lc-rs. openssl: probed through pkg-config. python3: the e2e
+      # tests drive host/tests/fake_agent.py (host/tests/common/mod.rs).
+      - name: Assert the build and test dependencies
+        run: |
+          cmake --version
+          pkg-config --exists openssl && pkg-config --modversion openssl
+          python3 --version
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Compile check (workspace, all targets)
+        run: cargo check --workspace --all-targets
+
+      - name: Tests
+        run: cargo test --workspace
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
