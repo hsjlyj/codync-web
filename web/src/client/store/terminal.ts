@@ -31,7 +31,8 @@ export class TerminalController {
   /** 输入微批：同步连击合并为一次 termInput（queueMicrotask 无定时器，测试可确定性冲刷）。 */
   private pendingInput: string[] = []
   private flushingInput = false
-  private readonly decoder = new TextDecoder()
+  /** UTF-8 流式解码器：output 块可能切在多字节字符中间（见 onTermEvent），跨会话不复用残留。 */
+  private decoder = new TextDecoder()
 
   constructor(
     private readonly transport: HostTransport,
@@ -43,6 +44,7 @@ export class TerminalController {
     if (this.termId || this.starting) return
     this.starting = true
     this.exited = false
+    this.decoder = new TextDecoder() // 新会话：丢弃上一条流可能留下的半字符
     this.handlers.onStage('starting')
     try {
       const reply = await this.transport.call<{ term: string }>('agentSetup', {
@@ -109,16 +111,28 @@ export class TerminalController {
   }
 
   private onTermEvent(event: TermEvent): void {
-    if (event.type === 'output') this.handlers.onOutput(this.decoder.decode(fromBase64(event.data)))
-    else if (event.type === 'exit') {
+    if (event.type === 'output') {
+      // 主机按读缓冲区切分输出，块边界会落在多字节字符（中文/emoji）中间：必须流式解码，
+      // 否则每块各自解出 U+FFFD。不完整的前缀留在解码器里，等下一块或流结束时收尾。
+      const text = this.decoder.decode(fromBase64(event.data), { stream: true })
+      if (text) this.handlers.onOutput(text)
+    } else if (event.type === 'exit') {
       this.exited = true
       this.termId = null
       this.stopStream = null
+      this.flushDecoder()
       this.handlers.onStage('exited', `code ${event.code}`)
     }
   }
 
+  /** 流收尾：放出解码器里挂起的半字符（残缺序列即 U+FFFD），不静默丢字节。幂等。 */
+  private flushDecoder(): void {
+    const rest = this.decoder.decode()
+    if (rest) this.handlers.onOutput(rest)
+  }
+
   private onStreamEnd(error: { message: string } | null): void {
+    this.flushDecoder() // exit 路径已收尾过（此时为空）；意外断开时也把残字节放出
     if (this.exited) return // 正常收尾（exit 后主机 end:true）
     this.exited = true
     this.termId = null

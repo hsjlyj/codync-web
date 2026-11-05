@@ -56,15 +56,31 @@ describe('TerminalController 输出解码', () => {
     expect(seen.join('')).toBe('中文')
   })
 
-  // 已知缺陷（待 希音 修）：onTermEvent 逐块调用 TextDecoder.decode(bytes) 而不带
-  // { stream: true }（store/terminal.ts:112），因此多字节字符被主机切在两个 chunk
-  // 之间时，两块都会解出 U+FFFD。主机按读缓冲区切分，切在字符中间是常态。
-  // 修好之后删掉 .fails —— 判定标准：两个块合起来必须还原为 '中'。
-  it.fails('跨 chunk 拆开的 UTF-8 字符应还原（当前输出 U+FFFD）', async () => {
+  // 回归护栏：onTermEvent 曾逐块调用 TextDecoder.decode(bytes) 而不带 { stream: true }，
+  // 主机把多字节字符切在两块之间时，两块各自解出 U+FFFD（终端中文/emoji 烂成问号）。
+  // 判定标准：两个块合起来必须还原为 '中'。
+  it('跨 chunk 拆开的 UTF-8 字符应还原', async () => {
     const bytes = new TextEncoder().encode('中')
     const seen: string[] = []
     const controller = controllerWith([bytes.subarray(0, 1), bytes.subarray(1)], (s) => seen.push(s))
     await controller.start({ backend: 'claude-code', step: 'install' })
     expect(seen.join('')).toBe('中')
+  })
+
+  // 流结束必须收尾：残留的半字符要放出来（U+FFFD），不能因为挂在解码器里被静默丢掉。
+  it('流结束时放出挂起的半字符', async () => {
+    const bytes = new TextEncoder().encode('中')
+    const seen: string[] = []
+    const transport = {
+      call: async <T,>(method: string) => (method === 'agentSetup' ? ({ term: UUID } as T) : ({} as T)),
+      stream: (_path: string, onData: (e: unknown) => void) => {
+        onData({ type: 'output', data: toBase64(bytes.subarray(0, 1)) })
+        onData({ type: 'exit', code: 0 })
+        return () => {}
+      },
+    }
+    const controller = new TerminalController(transport, { onOutput: (s) => seen.push(s), onStage: () => {} })
+    await controller.start({ backend: 'claude-code', step: 'install' })
+    expect(seen.join('')).toBe('\ufffd')
   })
 })
