@@ -63,7 +63,14 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # State (token, identity key, SQLite, bots/, agents/) lives in $HOME/.codync.
-RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin codync
+#
+# That directory has to exist here, owned by the user, before the VOLUME line
+# below: when the mount point is missing from the image, Docker creates it at
+# container start as root:root, and this process — which runs as codync — then
+# fails with `Error: Permission denied (os error 13)` while opening its store.
+# 0700 because the token and the identity key live in there.
+RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin codync \
+ && install -d -o codync -g codync -m 0700 /home/codync/.codync
 
 COPY --from=build /usr/local/bin/codync-host /usr/local/bin/codync-host
 
