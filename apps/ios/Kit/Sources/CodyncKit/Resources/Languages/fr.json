@@ -1488,6 +1488,7 @@
   "Every device of that account loses access.": "Tous les appareils de ce compte perdent l’accès.",
   "Access comes back only when you add {name} to the account again on {name} itself.": "L’accès ne revient que si vous ajoutez de nouveau {name} au compte depuis {name} lui-même.",
   "{name} wants to use this computer. It joins {email}'s account. Check the phone shows {code}.": "{name} veut utiliser cet ordinateur. Il rejoint le compte de {email}. Vérifiez que le téléphone affiche {code}.",
+  "{name} wants to use this computer. It joins no account. Check the phone shows {code}.": "{name} veut utiliser cet ordinateur. Il ne rejoint aucun compte. Vérifiez que le téléphone affiche {code}.",
   "Not in an account: a signed-in phone that scans this asks to bring the computer into its account.": "Dans aucun compte : un téléphone connecté qui scanne ceci demande à ajouter l’ordinateur à son compte.",
   "Pairing link or code": "Lien ou code d'appairage",
   "Or type this code in the app's pairing screen: {code}": "Ou saisissez ce code dans l'écran d'appairage de l'app : {code}",

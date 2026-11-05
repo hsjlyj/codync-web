@@ -1,6 +1,7 @@
-//! The pairing channel (§4.1): one `pair`, answered, then closed with `4100`. The phone proves its account with a
-//! certificate from the cloud (docs/plans/require-sign-in.md, phase 2): a computer in an account lets in phones of
-//! that account only; one in no account asks first, then joins the phone's account.
+//! The pairing channel (§4.1): one `pair`, answered, then closed with `4100`. A device may prove its account with
+//! a certificate from the cloud: a computer in an account lets in devices of that account only. Without one — the
+//! web client has none — a computer in no account asks its user first, then lets the device in as a local one;
+//! nothing joins, and the computer stays as it is. A computer in an account refuses a certificate-less device.
 
 use super::*;
 use crate::remote::certificate::{self, Certified, Refusal};
@@ -45,9 +46,8 @@ impl Channel {
         let mut let_in =
             owner::while_unchanged(&self.hub, || self.let_in(account.as_ref(), false, code, name, platform));
         if matches!(let_in, Err(Kept::Unasked)) {
-            if let Err(close) =
-                self.ask(id, name, platform, account.as_ref().and_then(|a| a.email.as_deref()), incoming).await
-            {
+            let email = account.as_ref().and_then(|a| a.email.as_deref());
+            if let Err(close) = self.ask(id, name, platform, email, account.is_some(), incoming).await {
                 return close;
             }
             let_in = owner::while_unchanged(&self.hub, || self.let_in(account.as_ref(), true, code, name, platform));
@@ -74,7 +74,9 @@ impl Channel {
         (close::PAIRED, "paired")
     }
 
-    /// Before anything about this computer's account reaches the phone: a live code, then the phone's account.
+    /// Before anything about this computer's account reaches the device: a live code, then the account the device
+    /// proved. `Some` carries it; `None` is a device that proved none — only this computer, in no account, may let
+    /// one in, and it is let in as a local device.
     async fn admit(&self, id: u64, b: &Value, code: &str, source: &str) -> Result<Option<Certified>, CloseWith> {
         if !self.hub.pairing.locked().attempt(source) {
             return Err(self.reject(RejectCode::RateLimited).await);
@@ -93,10 +95,11 @@ impl Channel {
         }
     }
 
-    /// Run under `owner::while_unchanged`, so the account the phone is checked against is the one it is saved
-    /// under: a computer in an account lets in phones of that account only, one in no account only once it asked
-    /// (`asked`). Returns this computer's account. The code is spent only now: a phone turned away leaves it to the
-    /// right one, and while the computer asks the relay keeps the offer, and with it this socket.
+    /// Run under `owner::while_unchanged`, so the account the device is checked against is the one it is saved
+    /// under: a computer in an account lets in devices of that account only, and a device that proved none is
+    /// turned away; one in no account lets a device in only once it asked (`asked`), as a local device when the
+    /// device proved no account. Returns this computer's account. The code is spent only now: a device turned away
+    /// leaves it to the right one, and while the computer asks the relay keeps the offer, and with it this socket.
     fn let_in(
         &self,
         account: Option<&Certified>,
@@ -153,24 +156,26 @@ impl Channel {
         Ok(owner)
     }
 
-    /// A computer in no account asks its user before the phone comes in; a phone that leaves meanwhile takes the
-    /// question off the computer's screens.
+    /// A computer in no account asks its user before the device comes in — `certified` says whether the request
+    /// also joins the account it proved; a device that leaves meanwhile takes the question off the computer's
+    /// screens.
     async fn ask(
         &self,
         id: u64,
         name: &str,
         platform: &str,
         email: Option<&str>,
+        certified: bool,
         incoming: &mut mpsc::Receiver<Value>,
     ) -> Result<(), CloseWith> {
         let Ok(device_key) = crypto::unb64_n::<32>(&self.key) else { return Err(PROTOCOL) };
         let code = crypto::pair_check_code(&device_key, &self.hub.identity.sign_pub());
         let let_in = tokio::select! {
-            let_in = pairing_requests::ask(&self.hub, name, platform, email, code) => let_in,
-            // Nothing else comes on a pairing channel: its end means the phone gave up.
+            let_in = pairing_requests::ask(&self.hub, name, platform, email, certified, code) => let_in,
+            // Nothing else comes on a pairing channel: its end means the device gave up.
             () = async { while incoming.recv().await.is_some() {} } => return Err((close::NORMAL, "")),
         };
-        if let_in { Ok(()) } else { Err(self.refuse(id, "The computer didn't let this phone in.", "declined").await) }
+        if let_in { Ok(()) } else { Err(self.refuse(id, "The computer didn't let this device in.", "declined").await) }
     }
 
     /// The signed claim for `{claimId, nonce}`, or null without one, or with the Codync cloud off or a private

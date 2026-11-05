@@ -53,7 +53,8 @@ impl App {
         self.pairing_requests = requests(v);
     }
 
-    /// `y` / `n` on the sheet: the first waiting phone gets in (and the computer joins its account), or doesn't.
+    /// `y` / `n` on the sheet: the first waiting device gets in — bringing the computer into its account when it
+    /// proved one, as a local device when it proved none — or doesn't.
     pub(super) fn decide_pairing(&mut self, approve: bool) {
         if self.pairing_requests.is_empty() {
             return;
@@ -64,8 +65,8 @@ impl App {
         self.call("decidePairing", answer, After::PairingDecided);
     }
 
-    /// Known to be in no account while it could join one (the host's `canJoinAccount`): a signed-in phone that
-    /// scans the code asks to bring the computer into its own.
+    /// Known to be in no account while it could join one (the host's `canJoinAccount`): a device that scanned the
+    /// code asks to bring the computer into its own.
     pub fn outside_account(&self) -> bool {
         self.cloud["canJoinAccount"] == true
     }

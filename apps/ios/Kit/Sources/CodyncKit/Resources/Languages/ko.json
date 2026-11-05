@@ -1488,6 +1488,7 @@
   "Every device of that account loses access.": "그 계정의 모든 기기가 접근 권한을 잃습니다.",
   "Access comes back only when you add {name} to the account again on {name} itself.": "{name}에서 직접 {name}을(를) 다시 계정에 추가해야만 접근 권한이 돌아옵니다.",
   "{name} wants to use this computer. It joins {email}'s account. Check the phone shows {code}.": "{name}에서 이 컴퓨터를 사용하려고 합니다. 이 컴퓨터는 {email} 계정에 추가됩니다. 휴대폰에 {code}가 표시되는지 확인하세요.",
+  "{name} wants to use this computer. It joins no account. Check the phone shows {code}.": "{name}에서 이 컴퓨터를 사용하려고 합니다. 이 컴퓨터는 어떤 계정에도 추가되지 않습니다. 휴대폰에 {code}가 표시되는지 확인하세요.",
   "Not in an account: a signed-in phone that scans this asks to bring the computer into its account.": "계정에 속해 있지 않음: 로그인된 휴대폰이 이것을 스캔하면 이 컴퓨터를 그 계정에 추가하도록 요청합니다.",
   "Pairing link or code": "페어링 링크 또는 코드",
   "Or type this code in the app's pairing screen: {code}": "또는 앱의 페어링 화면에 이 코드를 입력하세요: {code}",

@@ -243,17 +243,18 @@ pub fn save_choice(store: &Store, on: bool) -> Result<()> {
     store.kv_set(KV_ENABLED, if on { "1" } else { "0" })
 }
 
-/// A phone's platform as the catalog names it.
+/// A device's platform as the catalog names it.
 fn platform(p: &str) -> &'static str {
     match p {
         "ios" => "ios",
         "android" => "android",
         "macos" => "macos",
+        "web" => "web",
         _ => "other",
     }
 }
 
-/// The platform of the paired phone `key` (`other` for one this computer doesn't have).
+/// The platform of the paired device `key` (`other` for one this computer doesn't have).
 fn platform_of(hub: &Hub, key: &str) -> &'static str {
     platform(hub.store.device(key).as_ref().map_or("", |d| d.platform.as_str()))
 }

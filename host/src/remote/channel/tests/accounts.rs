@@ -1,4 +1,4 @@
-//! Pairing proves the phone's account (docs/plans/require-sign-in.md, phase 2).
+//! Pairing proves the device's account, and a device that proves none is let in as a local one — or refused.
 
 use super::*;
 
@@ -32,13 +32,42 @@ async fn an_uncertified_device_on_an_unowned_host_waits_for_local_approval() {
     .expect("an uncertified local device should reach the host approval queue");
     let request = hub.pairing_requests.json()[0].clone();
     assert_eq!(request["deviceName"], "Codync Web");
+    assert_eq!(request["certified"], false, "no screen may offer to join an account the device never proved");
     let key = p.dk();
     crate::remote::pairing_requests::decide(&hub, request["requestId"].as_str().unwrap(), true).unwrap();
     let reply = p.recv().await.unwrap();
     assert_eq!(reply["ok"]["computerId"], hub.identity.computer_id());
-    assert_eq!(hub.store.device(&key).unwrap().account, None, "local pairing doesn't invent an account");
-    assert!(!hub.pairing.locked().open(), "the code is consumed only after local approval");
+    let device = hub.store.device(&key).unwrap();
+    assert_eq!(device.account, None, "local pairing doesn't invent an account");
+    assert_eq!(device.source, DeviceSource::Local);
+    assert_eq!(device.scopes, vec![Scope::Control, Scope::Screen]);
+    assert!(!hub.pairing.locked().open(), "the code is spent once the device is in");
 }
+
+#[tokio::test]
+async fn a_local_device_turned_down_leaves_the_code_to_the_right_one() {
+    let hub = unowned_hub();
+    let (mut p, code) = pairing_phone(&hub).await;
+    let body = json!({"code": code, "name": "Codync Web", "platform": "web"});
+    p.send(json!({"id": 1, "m": "pair", "b": body})).await;
+    let request = timeout(Duration::from_secs(1), async {
+        while hub.pairing_requests.json().is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .map(|()| hub.pairing_requests.json()[0].clone())
+    .expect("an uncertified local device should reach the host approval queue");
+    assert_eq!(request["certified"], false);
+    crate::remote::pairing_requests::decide(&hub, request["requestId"].as_str().unwrap(), false).unwrap();
+    // The refusal is this device's answered `pair`, then the close: no plain `reject` frame first.
+    let refusal = p.recv().await.expect("the refusal is the pair's answer, not a plain reject");
+    assert_eq!((refusal["id"].as_u64(), refusal["err"]["status"].as_u64()), (Some(1), Some(403)));
+    assert_eq!(p.recv().await.unwrap_err().0, close::UNAUTHORIZED);
+    assert!(hub.store.device(&p.dk()).is_none(), "a turned-down device isn't saved");
+    assert!(hub.pairing.locked().valid(&code), "a turned-down device leaves the code to the right one");
+}
+
 
 #[tokio::test]
 async fn an_uncertified_device_is_rejected_by_an_account_owned_host() {
@@ -107,6 +136,7 @@ async fn a_computer_in_no_account_asks_then_joins_the_phones() {
         body["claim"] = json!({"claimId": "clm_1", "nonce": "n1"});
         let request = asked(&hub, &mut p, body).await;
         assert_eq!(request["email"], "user_2@example.com");
+        assert_eq!(request["certified"], true, "a device that proved an account is what the screen offers to join");
         let device_key = crypto::unb64_n::<32>(&p.dk()).unwrap();
         let expected = crypto::pair_check_code(&device_key, &hub.identity.sign_pub());
         assert_eq!(request["code"], expected.as_str(), "the code the phone shows too");

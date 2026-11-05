@@ -1,7 +1,7 @@
-//! A signed-in phone scanning a computer that isn't in an account (docs/plans/require-sign-in.md, phase 2):
-//! the computer confirms in the desktop app, the terminal UI, `codync-host pair` or `codync-host access` before
-//! the phone gets in and the computer joins the phone's account. Both screens show the same 6-digit code
-//! ([`crate::remote::crypto::pair_check_code`]).
+//! A device scanning a computer that isn't in an account: the computer confirms in the desktop app, the terminal
+//! UI, `codync-host pair` or `codync-host access` before the device gets in. A device that proved an account with
+//! a certificate brings the computer into that account; one that carried none is let in as a local device, and
+//! nothing joins. Both screens show the same 6-digit code ([`crate::remote::crypto::pair_check_code`]).
 
 use crate::LockExt;
 use crate::hub::Hub;
@@ -20,13 +20,17 @@ struct Pending {
     id: String,
     device_name: String,
     platform: String,
+    /// The account the device proved, when it carried a certificate: what a screen says the computer joins.
     email: Option<String>,
+    /// Whether the device proved an account at all. False means it is let in as a local device, so no screen may
+    /// offer to join anything (a missing `email` cannot say this: an account may simply have no address).
+    certified: bool,
     code: String,
     expires_at: i64,
     answer: Option<oneshot::Sender<bool>>,
 }
 
-/// The phones waiting for this computer's answer (memory only: a restart declines them).
+/// The devices waiting for this computer's answer (memory only: a restart declines them).
 #[derive(Default)]
 pub struct PairingRequests(Mutex<Vec<Pending>>);
 
@@ -37,15 +41,23 @@ impl PairingRequests {
             .iter()
             .map(|p| {
                 json!({"requestId": p.id, "deviceName": p.device_name, "platform": p.platform,
-                       "email": p.email, "code": p.code, "expiresAt": p.expires_at})
+                       "email": p.email, "certified": p.certified, "code": p.code, "expiresAt": p.expires_at})
             })
             .collect()
     }
 }
 
-/// Asks this computer whether the phone may come in and bring it into `email`'s account; false when it says
-/// no or nobody answers in time. Dropping the future (the phone left) withdraws the question.
-pub async fn ask(hub: &Hub, device_name: &str, platform: &str, email: Option<&str>, code: String) -> bool {
+/// Asks this computer whether the device may come in — and, for one that proved `email`'s account, whether the
+/// computer joins it. False when it says no or nobody answers in time. Dropping the future (the device left)
+/// withdraws the question.
+pub async fn ask(
+    hub: &Hub,
+    device_name: &str,
+    platform: &str,
+    email: Option<&str>,
+    certified: bool,
+    code: String,
+) -> bool {
     let (tx, rx) = oneshot::channel();
     let id = uuid::Uuid::new_v4().to_string();
     hub.pairing_requests.0.locked().push(Pending {
@@ -53,6 +65,7 @@ pub async fn ask(hub: &Hub, device_name: &str, platform: &str, email: Option<&st
         device_name: device_name.to_owned(),
         platform: platform.to_owned(),
         email: email.map(str::to_owned),
+        certified,
         code,
         expires_at: now_ms() + i64::try_from(ASK_FOR.as_millis()).unwrap_or(i64::MAX),
         answer: Some(tx),
@@ -119,7 +132,7 @@ mod tests {
         for approve in [true, false] {
             let asking = tokio::spawn({
                 let hub = Arc::clone(&hub);
-                async move { ask(&hub, "Pixel", "android", Some("k@example.com"), "123456".into()).await }
+                async move { ask(&hub, "Pixel", "android", Some("k@example.com"), true, "123456".into()).await }
             });
             while hub.pairing_requests.json().is_empty() {
                 tokio::task::yield_now().await;
@@ -138,7 +151,7 @@ mod tests {
         let hub = hub();
         let asking = tokio::spawn({
             let hub = Arc::clone(&hub);
-            async move { ask(&hub, "Pixel", "android", None, "123456".into()).await }
+            async move { ask(&hub, "Pixel", "android", None, false, "123456".into()).await }
         });
         while hub.pairing_requests.json().is_empty() {
             tokio::task::yield_now().await;

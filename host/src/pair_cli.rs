@@ -79,16 +79,22 @@ async fn wait(port: u16, url: &str, expires_at: i64) -> Result<()> {
         tokio::time::sleep(Duration::from_secs(1)).await;
         let requests = local_call(port, "pairingRequests", json!({})).await?;
         if let Some(r) = requests["requests"].as_array().and_then(|r| r.first()) {
-            println!(
-                "\n{} wants to use this computer. It joins {}'s account.\nCheck the phone shows {}.",
-                r["deviceName"].as_str().unwrap_or("A phone"),
-                r["email"].as_str().unwrap_or("a Codync account"),
-                spaced(r["code"].as_str().unwrap_or_default()),
-            );
+            // A device that proved an account joins it; one that proved none stays a local device, and saying
+            // "joins an account" here would ask the user to consent to something that never happens.
+            let name = r["deviceName"].as_str().unwrap_or("A device");
+            let code = spaced(r["code"].as_str().unwrap_or_default());
+            if r["certified"].as_bool().unwrap_or(true) {
+                println!(
+                    "\n{name} wants to use this computer. It joins {}'s account.\nCheck the phone shows {code}.",
+                    r["email"].as_str().unwrap_or("a Codync account"),
+                );
+            } else {
+                println!("\n{name} wants to use this computer. It joins no account.\nCheck the phone shows {code}.");
+            }
             let approve = crate::prompt::ask_yes_no("Let it in? [y/N] ").await?;
             let answered = local_call(port, "decidePairing", json!({"requestId": r["requestId"], "approve": approve}));
             if answered.await.is_err() {
-                println!("The phone stopped waiting, or it was answered elsewhere.");
+                println!("The device stopped waiting, or it was answered elsewhere.");
             } else if !approve {
                 println!("Turned away.");
                 return Ok(());
@@ -129,6 +135,13 @@ pub async fn access(port: u16, action: AccessAction) -> Result<()> {
                 println!("No devices are asking for access.");
             }
             for (r, decide) in &requests {
+                // The suffix describes what answering would do, which differs for a device that proved no
+                // account: it is let in as a local device, and the computer joins nothing.
+                let joining = if r["certified"].as_bool().unwrap_or(true) {
+                    "  pairing: the computer joins this account"
+                } else {
+                    "  pairing: a local device, no account"
+                };
                 println!(
                     "{}  {} ({}, {})  code {}{}",
                     r["requestId"].as_str().unwrap_or_default(),
@@ -136,7 +149,7 @@ pub async fn access(port: u16, action: AccessAction) -> Result<()> {
                     r["platform"].as_str().unwrap_or_default(),
                     r["email"].as_str().unwrap_or("no email"),
                     r["code"].as_str().unwrap_or("(waiting for the device)"),
-                    if *decide == "decidePairing" { "  pairing: the computer joins this account" } else { "" },
+                    if *decide == "decidePairing" { joining } else { "" },
                 );
             }
             return Ok(());

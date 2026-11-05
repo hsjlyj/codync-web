@@ -34,23 +34,30 @@ pub(super) fn pair(buf: &mut Buffer, area: Rect, app: &App, code: &PairCode) {
     }
 }
 
-/// A phone that scanned the code waits for this computer: `y` lets it in and the computer joins its account.
+/// A device that scanned the code waits for this computer: `y` lets it in. One that proved an account brings the
+/// computer into it; one that proved none (the web client) is let in as a local device, and nothing joins.
 fn ask(buf: &mut Buffer, area: Rect, request: &Value) {
     let t = theme();
-    let name = request["deviceName"].as_str().unwrap_or("A phone");
-    let email =
-        request["email"].as_str().filter(|e| !e.is_empty()).map_or_else(|| tr("A Codync account"), Cow::Borrowed);
+    let name = request["deviceName"].as_str().unwrap_or("A device");
     let code = request["code"].as_str().unwrap_or_default();
     // A no-break space: the code never wraps apart.
     let code = match code.split_at_checked(3) {
         Some((a, b)) if code.len() == 6 => format!("{a}\u{a0}{b}"),
         _ => code.to_owned(),
     };
+    // A request from before this field proved an account: only such a device was ever let in then.
+    let certified = request["certified"].as_bool().unwrap_or(true);
+    let line = if certified {
+        let email =
+            request["email"].as_str().filter(|e| !e.is_empty()).map_or_else(|| tr("A Codync account"), Cow::Borrowed);
+        tr("{name} wants to use this computer. It joins {email}'s account. Check the phone shows {code}.")
+            .replace("{email}", &email)
+    } else {
+        tr("{name} wants to use this computer. It joins no account. Check the phone shows {code}.")
+            .into_owned()
+    };
     // The name last: whatever it says stays as written.
-    let text = tr("{name} wants to use this computer. It joins {email}'s account. Check the phone shows {code}.")
-        .replace("{email}", &email)
-        .replace("{code}", &code)
-        .replace("{name}", name);
+    let text = line.replace("{code}", &code).replace("{name}", name);
     let lines = note(text, 52, t.text.patch(t.panel));
     let r = centered(area, 56, u(lines.len() + 5));
     let inner = frame_box(buf, r, t.text, t.panel, Some(("Pair a phone", t.text)));
@@ -138,6 +145,52 @@ mod tests {
         for part in ["Pixel", "k@example.com", "123\u{a0}456", "y let in · n don't allow"] {
             assert!(text.contains(part), "{part} in\n{text}");
         }
+    }
+
+    /// The lines the sheet wraps `text` into, so a copy assertion holds in any language and at any width.
+    fn wrapped_lines(text: &str) -> Vec<String> {
+        let t = theme();
+        note(text.to_owned(), 52, t.text.patch(t.panel))
+            .iter()
+            .map(|l| l.to_string())
+            .filter(|l| !l.trim().is_empty())
+            .collect()
+    }
+
+    /// A request from before the `certified` field proved an account, so it keeps the account sentence.
+    #[test]
+    fn a_request_without_the_flag_still_reads_as_the_account_it_proved() {
+        let mut buf = Buffer::empty(Rect::new(0, 0, 80, 20));
+        let request = json!({"requestId": "a", "deviceName": "Pixel", "email": "k@example.com", "code": "123456"});
+        let area = buf.area;
+        ask(&mut buf, area, &request);
+        let text = shown(&buf);
+        let expected = tr("{name} wants to use this computer. It joins {email}'s account. Check the phone shows {code}.")
+            .replace("{name}", "Pixel")
+            .replace("{email}", "k@example.com")
+            .replace("{code}", "123\u{a0}456");
+        for line in wrapped_lines(&expected) {
+            assert!(text.contains(line.as_str()), "{line} in\n{text}");
+        }
+    }
+
+    /// The web client proves no account: the sheet must not offer to join one, in any language.
+    #[test]
+    fn a_device_that_proved_no_account_is_offered_no_account() {
+        let mut buf = Buffer::empty(Rect::new(0, 0, 80, 20));
+        let request = json!({"requestId": "a", "deviceName": "Codync Web", "certified": false, "code": "123456"});
+        let area = buf.area;
+        ask(&mut buf, area, &request);
+        let text = shown(&buf);
+        let expected = tr("{name} wants to use this computer. It joins no account. Check the phone shows {code}.")
+            .replace("{name}", "Codync Web")
+            .replace("{code}", "123\u{a0}456");
+        for line in wrapped_lines(&expected) {
+            assert!(text.contains(line.as_str()), "{line} in\n{text}");
+        }
+        // Nothing joins, so nothing may name an account — least of all a missing one read as "account's account".
+        assert!(!text.contains(&*tr("A Codync account")), "{text}");
+        assert!(!text.contains("account's account"), "{text}");
     }
 
     #[test]
