@@ -27,7 +27,7 @@ pub(super) fn pair(buf: &mut Buffer, area: Rect, app: &App, code: &PairCode) {
         PairCode::Failed(e) => (e.as_str(), t.red),
     };
     let r = centered(area, 56, 6);
-    let inner = frame_box(buf, r, t.text, t.panel, Some(("Pair a phone", t.text)));
+    let inner = frame_box(buf, r, t.text, t.panel, Some(("Pair a device", t.text)));
     put(buf, inner.x, inner.y + 1, inner.width, text, style.patch(t.panel));
     if matches!(code, PairCode::Failed(_)) {
         put(buf, inner.x, inner.bottom() - 1, inner.width, "r try again · esc close", t.dim.patch(t.panel));
@@ -35,7 +35,8 @@ pub(super) fn pair(buf: &mut Buffer, area: Rect, app: &App, code: &PairCode) {
 }
 
 /// A device that scanned the code waits for this computer: `y` lets it in. One that proved an account brings the
-/// computer into it; one that proved none (the web client) is let in as a local device, and nothing joins.
+/// computer into it; one that proved none (the web client) is let in as a local device, and nothing joins. A
+/// device that sent no check code is never asked to compare one.
 fn ask(buf: &mut Buffer, area: Rect, request: &Value) {
     let t = theme();
     let name = request["deviceName"].as_str().unwrap_or("A device");
@@ -47,20 +48,31 @@ fn ask(buf: &mut Buffer, area: Rect, request: &Value) {
     };
     // A request from before this field proved an account: only such a device was ever let in then.
     let certified = request["certified"].as_bool().unwrap_or(true);
-    let line = if certified {
-        let email =
-            request["email"].as_str().filter(|e| !e.is_empty()).map_or_else(|| tr("A Codync account"), Cow::Borrowed);
-        tr("{name} wants to use this computer. It joins {email}'s account. Check the phone shows {code}.")
-            .replace("{email}", &email)
-    } else {
-        tr("{name} wants to use this computer. It joins no account. Check the phone shows {code}.")
-            .into_owned()
+    let email =
+        request["email"].as_str().filter(|e| !e.is_empty()).map_or_else(|| tr("A Codync account"), Cow::Borrowed);
+    // Two separate facts: what the device proved it joins, and whether there is a code to compare. The web client
+    // sends none, and "Check the phone shows ." would ask the user to check nothing on a phone that isn't there.
+    let line = match (certified, code.is_empty()) {
+        (true, false) => {
+            tr("{name} wants to use this computer. It joins {email}'s account. Check the phone shows {code}.")
+                .replace("{email}", &email)
+        }
+        (false, false) => {
+            tr("{name} wants to use this computer. It joins no account. Check the phone shows {code}.").into_owned()
+        }
+        (true, true) => {
+            tr("{name} wants to use this computer. It joins {email}'s account. This device shows no check code.")
+                .replace("{email}", &email)
+        }
+        (false, true) => {
+            tr("{name} wants to use this computer. It joins no account. This device shows no check code.").into_owned()
+        }
     };
     // The name last: whatever it says stays as written.
     let text = line.replace("{code}", &code).replace("{name}", name);
     let lines = note(text, 52, t.text.patch(t.panel));
     let r = centered(area, 56, u(lines.len() + 5));
-    let inner = frame_box(buf, r, t.text, t.panel, Some(("Pair a phone", t.text)));
+    let inner = frame_box(buf, r, t.text, t.panel, Some(("Pair a device", t.text)));
     for (y, line) in (inner.y + 1..).zip(&lines) {
         put_line(buf, inner.x, y, inner.width, line);
     }
@@ -102,7 +114,7 @@ fn qr(buf: &mut Buffer, area: Rect, url: &str, short_code: Option<&str>, outside
     let fits = u(lines.len() + 4 + wide.len()) <= area.height && u(qw + 4) <= area.width;
     let (bw, qr_rows, below) = if fits { (u(qw.max(50) + 4), lines.len(), wide) } else { (70, 1, below(66)) };
     let r = centered(area, bw, u(qr_rows + 4 + below.len()));
-    let inner = frame_box(buf, r, t.text, t.panel, Some(("Pair a phone", t.text)));
+    let inner = frame_box(buf, r, t.text, t.panel, Some(("Pair a device", t.text)));
     let mut y = inner.y;
     if fits {
         // The QR needs light modules on dark ones regardless of the terminal theme.
@@ -191,6 +203,36 @@ mod tests {
         // Nothing joins, so nothing may name an account — least of all a missing one read as "account's account".
         assert!(!text.contains(&*tr("A Codync account")), "{text}");
         assert!(!text.contains("account's account"), "{text}");
+    }
+
+    /// A device that sent no code is asked to compare nothing, and no phone is named: it may be a browser.
+    #[test]
+    fn a_request_without_a_check_code_is_asked_to_compare_nothing() {
+        for (request, expected) in [
+            (
+                json!({"requestId": "a", "deviceName": "Codync Web", "certified": false}),
+                tr("{name} wants to use this computer. It joins no account. This device shows no check code.")
+                    .replace("{name}", "Codync Web"),
+            ),
+            (
+                json!({"requestId": "a", "deviceName": "Pixel", "email": "k@example.com"}),
+                tr("{name} wants to use this computer. It joins {email}'s account. This device shows no check code.")
+                    .replace("{name}", "Pixel")
+                    .replace("{email}", "k@example.com"),
+            ),
+        ] {
+            let mut buf = Buffer::empty(Rect::new(0, 0, 80, 20));
+            let area = buf.area;
+            ask(&mut buf, area, &request);
+            let text = shown(&buf);
+            for line in wrapped_lines(&expected) {
+                assert!(text.contains(line.as_str()), "{line} in\n{text}");
+            }
+            assert!(
+                !text.contains("phone") && !text.contains("{code}") && !text.contains("shows ."),
+                "nothing to compare, so nothing may ask for it\n{text}"
+            );
+        }
     }
 
     #[test]

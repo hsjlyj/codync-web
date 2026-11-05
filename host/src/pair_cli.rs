@@ -79,18 +79,9 @@ async fn wait(port: u16, url: &str, expires_at: i64) -> Result<()> {
         tokio::time::sleep(Duration::from_secs(1)).await;
         let requests = local_call(port, "pairingRequests", json!({})).await?;
         if let Some(r) = requests["requests"].as_array().and_then(|r| r.first()) {
-            // A device that proved an account joins it; one that proved none stays a local device, and saying
-            // "joins an account" here would ask the user to consent to something that never happens.
             let name = r["deviceName"].as_str().unwrap_or("A device");
-            let code = spaced(r["code"].as_str().unwrap_or_default());
-            if r["certified"].as_bool().unwrap_or(true) {
-                println!(
-                    "\n{name} wants to use this computer. It joins {}'s account.\nCheck the phone shows {code}.",
-                    r["email"].as_str().unwrap_or("a Codync account"),
-                );
-            } else {
-                println!("\n{name} wants to use this computer. It joins no account.\nCheck the phone shows {code}.");
-            }
+            let (proven, check) = awaiting_lines(r);
+            println!("\n{name} wants to use this computer. {proven}\n{check}");
             let approve = crate::prompt::ask_yes_no("Let it in? [y/N] ").await?;
             let answered = local_call(port, "decidePairing", json!({"requestId": r["requestId"], "approve": approve}));
             if answered.await.is_err() {
@@ -115,6 +106,25 @@ fn spaced(code: &str) -> String {
         Some((a, b)) if code.len() == 6 => format!("{a} {b}"),
         _ => code.to_owned(),
     }
+}
+
+/// What a waiting device's prompt says: what it joins, and what to compare. A device that proved an account joins
+/// it; one that proved none is let in as a local device, and saying "joins an account" would ask the user to
+/// consent to something that never happens. A device that sent no check code (the web client sends none) is asked
+/// to compare nothing — "Check the phone shows ." names a phone that isn't there and a code that doesn't exist.
+fn awaiting_lines(r: &Value) -> (String, String) {
+    let proven = if r["certified"].as_bool().unwrap_or(true) {
+        format!("It joins {}'s account.", r["email"].as_str().unwrap_or("a Codync account"))
+    } else {
+        "It joins no account.".to_owned()
+    };
+    let code = r["code"].as_str().unwrap_or_default();
+    let check = if code.is_empty() {
+        "This device shows no check code.".to_owned()
+    } else {
+        format!("Check the phone shows {}.", spaced(code))
+    };
+    (proven, check)
 }
 
 /// Requests waiting for this computer's answer, each with the method that answers it.
@@ -176,5 +186,20 @@ mod tests {
     fn the_check_code_reads_as_on_the_phone() {
         assert_eq!(spaced("165780"), "165 780");
         assert_eq!(spaced(""), "");
+    }
+
+    #[test]
+    fn a_prompt_never_asks_about_a_code_that_was_never_sent() {
+        let certified = json!({"certified": true, "email": "k@example.com", "code": "165780"});
+        let local = json!({"certified": false, "code": "165780"});
+        let shows = "Check the phone shows 165 780.".to_owned();
+        assert_eq!(awaiting_lines(&certified), ("It joins k@example.com's account.".to_owned(), shows.clone()));
+        assert_eq!(awaiting_lines(&local), ("It joins no account.".to_owned(), shows));
+        // A device that sent no code: the prompt says so instead of naming a phone and an empty code.
+        for without in [json!({"certified": true, "email": "k@example.com"}), json!({"certified": false})] {
+            let (proven, check) = awaiting_lines(&without);
+            assert_eq!(check, "This device shows no check code.");
+            assert!(!proven.contains("phone") && !check.contains("phone"), "{proven} {check}");
+        }
     }
 }

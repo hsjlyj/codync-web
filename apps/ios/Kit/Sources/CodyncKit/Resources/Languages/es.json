@@ -1489,6 +1489,8 @@
   "Access comes back only when you add {name} to the account again on {name} itself.": "El acceso solo vuelve cuando añades {name} a la cuenta de nuevo desde {name}.",
   "{name} wants to use this computer. It joins {email}'s account. Check the phone shows {code}.": "{name} quiere usar esta computadora. Se une a la cuenta de {email}. Comprueba que el teléfono muestra {code}.",
   "{name} wants to use this computer. It joins no account. Check the phone shows {code}.": "{name} quiere usar esta computadora. No se une a ninguna cuenta. Comprueba que el teléfono muestra {code}.",
+  "{name} wants to use this computer. It joins {email}'s account. This device shows no check code.": "{name} quiere usar esta computadora. Se une a la cuenta de {email}.Este dispositivo no muestra ningún código de verificación.",
+  "{name} wants to use this computer. It joins no account. This device shows no check code.": "{name} quiere usar esta computadora. No se une a ninguna cuenta.Este dispositivo no muestra ningún código de verificación.",
   "Not in an account: a signed-in phone that scans this asks to bring the computer into its account.": "Sin cuenta: un teléfono con sesión iniciada que escanee esto pedirá añadir la computadora a su cuenta.",
   "Pairing link or code": "Enlace o código",
   "Or type this code in the app's pairing screen: {code}": "O escribe este código en la pantalla de emparejamiento de la app: {code}",
