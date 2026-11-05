@@ -8,16 +8,28 @@
 #   docker build -f host/Dockerfile -t <namespace>/codync-host .
 #
 # What shapes this file:
+#   * CODYNC_ENV is read at COMPILE time (option_env!) and defaults to Dev. A
+#     default build is a useless image: port 19223, state in ~/.codync-dev, the
+#     dev cloud endpoint, and the dev device-certificate key — a production
+#     phone could never pair with it. The build stage pins it to main.
+#   * HOME has to exist at run time: the host resolves its state directory from
+#     it and refuses to start without one, and Docker does not set HOME for the
+#     USER instruction. The runtime stage sets it explicitly.
 #   * rusqlite is built with the `bundled` feature, so the runtime image needs
 #     no system SQLite.
 #   * cmake is a build-time requirement of aws-lc-rs (TLS); the runtime image
-#     only needs a trust store.
+#     needs ca-certificates, because the host builds a real TLS client for the
+#     cloud on first use.
 #   * `serve` already defaults to --bind 0.0.0.0 --port 19222, which is what a
 #     container wants; the entrypoint spells both out so they read explicitly.
-#   * A container has no desktop app and no terminal UI, so pairing approval is
-#     the CLI:  docker exec -it <container> codync-host access approve <id>
+#   * Do NOT run `codync-host install` in this image. Self-updating is gated on
+#     a systemd unit, so it stays inert here, and replacing the binary would
+#     break the image contract — upgrade by running a newer tag.
 
-FROM rust:1.99.0-bookworm AS build
+FROM rust:1.99.0-bookworm@sha256:114c7a4425406451c2866b6aafe69fe29b1b298832db1277d411ac73c82d04d6 AS build
+
+# A container ships a release build, and a release build is a Main build.
+ENV CODYNC_ENV=main
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends cmake pkg-config \
@@ -34,26 +46,27 @@ COPY docs/reference/fixtures/ ./docs/reference/fixtures/
 COPY packaging/updates/ ./packaging/updates/
 
 WORKDIR /src/host
-# One layer so the cache mount can hold the registry and target dir across
-# builds while the binary still lands in the image.
+# One layer, so the cache mount can hold the registry and the target directory
+# across builds while the binary still lands in the image.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/host/target \
     cargo build --release --locked \
- && cp target/release/codync-host /usr/local/bin/codync-host
+ && cp target/release/codync-host /usr/local/bin/codync-host \
+ && /usr/local/bin/codync-host --version
 
-FROM debian:bookworm-slim AS runtime
+FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3 AS runtime
 
-# The host talks HTTPS to the Codync cloud, so it needs a trust store.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-# State (devices, token, bots, sessions) lives in ~/.codync; see the volume.
+# State (token, identity key, SQLite, bots/, agents/) lives in $HOME/.codync.
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin codync
 
 COPY --from=build /usr/local/bin/codync-host /usr/local/bin/codync-host
 
 USER codync
+ENV HOME=/home/codync
 WORKDIR /home/codync
 VOLUME ["/home/codync/.codync"]
 
