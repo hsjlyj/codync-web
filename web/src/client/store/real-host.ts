@@ -23,7 +23,11 @@ export interface ConnectRealHostParams {
   /** 主机 Ed25519 公钥（welcome 强校验）；配对链接的 sk 优先。 */
   signKey?: string
   deviceName?: string
-  /** 云签发的设备证书（主机 2.38 配对必需，缺省将被 4400 拒绝）。 */
+  /**
+   * 云签发的设备证书（可选；留空即不随请求携带）：主机未登录云账号时改走本机配对，由主机弹窗/终端确认后
+   * 放行（本地配对主机 `codync-web-local-pairing` 的 `host/src/remote/channel/pairing.rs` → `admit`：
+   * `Err(Refusal::Missing)` 且主机无 owner 时返回 `Ok(None)`）；主机已登录账号时才必需，缺省将被 4400 拒绝。
+   */
   certificate?: DeviceCertificate
   /** 设备平台（主机白名单 ios|macos|android，pairing.rs:35）。 */
   platform?: string

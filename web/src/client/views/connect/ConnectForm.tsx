@@ -188,7 +188,7 @@ export function ConnectForm() {
               maxLength={100}
             />
           </Field>
-          <Field label="设备证书（可选 JSON；主机 2.38 配对要求云签发的 {payload, sig}，缺省会被 4400 拒绝；自托管可用 CODYNC_DEVICE_CERT_KEY 自签）">
+          <Field label="设备证书（可选 JSON；留空即可——主机未登录账号时会在主机上弹出确认，已登录账号时才需云签发的 {payload, sig}，缺省被 4400 拒绝）">
             <textarea
               value={certificateText}
               onChange={(e) => setCertificateText(e.target.value)}
