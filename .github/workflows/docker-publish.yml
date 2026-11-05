@@ -274,6 +274,11 @@ jobs:
             echo "::error::could not read a token from the running daemon"
             exit 1
           fi
+          # The curl below has to use the token the daemon just accepted: a
+          # mis-extracted value (truncated, or carrying a stray quote) would
+          # produce the same 401 this boundary test expects, so the 401 would
+          # stay unattributable. Fail here instead of reading a 401 as proof.
+          [ "$(docker exec "$container" cat /home/codync/.codync/token)" = "$token" ]
           code="$(curl -s -o /dev/null -w '%{http_code}' -X POST \
             -H "Authorization: Bearer $token" http://127.0.0.1:19222/api/hello)"
           echo "POST /api/hello from outside the container, with the real token -> $code"
